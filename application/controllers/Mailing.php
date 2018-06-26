@@ -57,56 +57,124 @@ class Mailing extends REST_Controller {
     }
 
     public function contratosVencidos_get(){
+
+        $validate = $this->db->query("SELECT DAY(CURDATE()) as day");
+        $validation = $validate->row_array();
+
+        if( $validation['day'] != 10 AND $validation['day'] != 25 ){
+            okResponse('Mail se envia días 10 y 25 de cada mes', 'data', true, $this);
+        }
         
         $mails = $this->getMailList('contratos');
 
+        $this->db->query("SET @inicio = CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
+                    '-',
+                    IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
+                        '0',
+                        ''),
+                    MONTH(ADDDATE(CURDATE(), 10)),
+                    '-',
+                    IF(DAY(ADDDATE(CURDATE(), 10)) < 15,
+                        '01',
+                        '16'))");
+        $this->db->query("SET @fin = CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
+                    '-',
+                    IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
+                        '0',
+                        ''),
+                    MONTH(ADDDATE(CURDATE(), 10)),
+                    '-',
+                    IF(DAY(ADDDATE(CURDATE(), 10)) < 15,
+                        '15',
+                        DAY(ADDDATE(DATE_ADD(CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
+                                            '-',
+                                            IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
+                                                '0',
+                                                ''),
+                                            MONTH(ADDDATE(CURDATE(), 10)),
+                                            '-01'),
+                                    INTERVAL 1 MONTH),
+                                - 1))))");
+
         $contQ = $this->db->query("SELECT 
-                                a.asesor,
-                                NOMBREASESOR(a.asesor, 2) AS Nombre,
-                                NOMBREDEP(dep) AS Dep,
-                                fin,
-                                CASE
-                                    WHEN CURDATE() > fin THEN 'Vencido'
-                                    WHEN fin < ADDDATE(CURDATE(), 7) THEN 'Por Vencer'
-                                    ELSE NULL
-                                END AS st
-                            FROM
-                                asesores_contratos a
-                                    LEFT JOIN
-                                dep_asesores b ON a.asesor = b.asesor
-                                    AND CURDATE() = b.Fecha
-                            WHERE
-                                activo = 1 AND deleted = 0 AND tipo = 1
-                                    AND vacante IS NOT NULL
-                                    AND dep != 29
-                            HAVING st IS NOT NULL
-                            ORDER BY st, Nombre");
+                                        a.asesor,
+                                        NOMBREASESOR(a.asesor, 2) AS Nombre,
+                                        NOMBREASESOR(a.asesor, 5) AS Num_Colaborador,
+                                        FINDSUPERDAYCC(CURDATE(), a.asesor, 7) AS Supervisor,
+                                        NOMBREDEP(dep) AS Dep,
+                                        fin,
+                                        CASE
+                                            WHEN CURDATE() > fin THEN 'Vencido'
+                                            WHEN fin BETWEEN @inicio AND @fin THEN 'Por Vencer'
+                                            ELSE NULL
+                                        END AS st
+                                    FROM
+                                        asesores_contratos a
+                                            LEFT JOIN
+                                        dep_asesores b ON a.asesor = b.asesor
+                                            AND CURDATE() = b.Fecha
+                                    WHERE
+                                        activo = 1 AND deleted = 0 AND tipo = 1
+                                            AND vacante IS NOT NULL
+                                            AND dep != 29
+                                    HAVING st IS NOT NULL 
+                                    ORDER BY st, Nombre");
         
         $contratos = $contQ->result_array();
         
         $this->countReturn($contQ, 'Sin contratos por reportar');
+
+        $cts = array();
+        foreach( $contratos as $i => $cData ){
+            $sup = $cData['Supervisor'] == NULL ? 'NoSup' : $cData['Supervisor'];
+            if( isset($cts[$sup]) ){
+                array_push( $cts[$sup], $cData );
+            }else{
+                $cts[$sup] = array($cData);
+            }
+        }
+         
+       foreach( $cts as $sup => $ctoMail ){
+            $super = ucwords(str_replace('.',' ',$sup));
+            $body = $this->buildCtosTable($ctoMail, true);
+        }
+
+        $mailBody = $this->buildCtosTable($contratos, false);
+
+        foreach( $mails as $index => $info ){
+            $text = '';
+            $text = "<p>Hola ".$info['Nombre'].",</p><p>Estos son los contratos vencidos y próximos a vencer:</p>".$mailBody[0];
+            $this->sendMail($mailBody[1], $info['usuario'], 'contratos', $text);
+        }
         
-        $titulo = "Contratos por vencidos y por vencer CC";
+        okResponse('Revisión de contratos exitosa', 'data', true, $this);
+    }
+
+    private function buildCtosTable( $contratos, $send ){
         
         $body = "<div><table style='text-align: left'>\n";
         
         foreach($contratos as $index => $info){
+            $super = $info['Supervisor'] == NULL ? 'NoSup' : ucwords(str_replace('.',' ',$info['Supervisor']));
+            $sup = $info['Supervisor'];
             $color = $info['st'] == 'Vencido' ? 'red' : '#c6b64b';
-            $body .= "<tr><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Nombre']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Dep']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['fin']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['st']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><a href='https://operaciones.pricetravel.com.mx/cycv2/#/detail-asesor/".$info['asesor']."'>Ver en CyC</a></td></tr>\n";
+            $body .= "<tr><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Nombre']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$super."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Dep']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['fin']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['st']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><a href='https://operaciones.pricetravel.com.mx/cycv2/#/detail-asesor/".$info['asesor']."'>Ver en CyC</a></td></tr>\n";
         }
         unset($index, $info);
         
         $body .= "</table></div><br>\n";
-
+        $titulo = "Contratos por vencidos y por vencer CC ($super)";
         
-        
-        foreach( $mails as $index => $info ){
-            $text = '';
-            $text = "<p>Hola ".$info['Nombre'].",</p><p>Estos son los contratos vencidos y próximos a vencer:</p>".$body;
-            $this->sendMail($titulo, $info['usuario'], 'contratos', $text);
+        if( $send ){
+            if( $super != 'NoSup' ){
+                $text = '';
+                $text = "<p>Hola $super,</p><p>Estos son los contratos vencidos y próximos a vencer:</p>".$body;
+                $this->sendMail($titulo, $sup, 'contratos', $text);
+                $this->sendMail($titulo, 'albert.sanchez', 'contratos', $text);
+            }
+        }else{
+            return array($body, "Contratos por vencidos y por vencer CC");
         }
-        
-        okResponse('Revisión de contratos exitosa', 'data', true, $this);
     }
     
     public function faltasConsecutivas_get(){
@@ -115,7 +183,7 @@ class Mailing extends REST_Controller {
         $ch = $check->row_array();
         
         if( $ch['flag'] != 1 ){
-            okResponse('Fuera de Horario', 'data', true, $this);
+           okResponse($msg, 'data', true, $this);
         }
         
         $mails = $this->getMailList('faltasConsecutivas');
