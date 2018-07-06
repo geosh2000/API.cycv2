@@ -55,6 +55,20 @@ class Mailing extends REST_Controller {
         return $mailQ->result_array();
         
     }
+    
+    private function getMailListNV( $tipo ){
+        $mailQ = $this->db->query("SELECT 
+                                        a.*, NOMBREASESOR(asesor_id, 1) AS Nombre
+                                    FROM
+                                        mail_lists a
+                                            LEFT JOIN
+                                        userDB b ON a.usuario = b.username
+                                    WHERE
+                                        notif = '$tipo'");
+        
+        $this->countReturn($mailQ, 'Sin mails configurados para tipo \'$tipo\'');
+        return $mailQ->result_array();
+    }
 
     public function contratosVencidos_get(){
 
@@ -521,6 +535,49 @@ class Mailing extends REST_Controller {
         $msg = mailingV2::sendMail($user,$type);
         
         okResponse('Fuera de Horario o no primer dia del mes', 'data', $msg, $this);
+    }
+
+    public function bajaSolicitud( $asesor, $solicitante, $fecha, $reemp, $recont ){
+        
+        $q = $this->db->query("SELECT NOMBREASESOR($asesor,1) as NCorto, NOMBREASESOR($asesor,2) as Nombre
+                                      NOMBREASESOR($solicitante,1) as NCortoSol, NOMBREASESOR($solicitante,2) as NombreSol,
+                                      NOMBREDEP(dep) as depto, dep FROM dep_asesores WHERE asesor=$asesor AND Fecha=CURDATE()");
+        $name = $q->row_array();
+        
+        switch($name['dep']){
+            case 29:
+                $cc = 'pdv';
+                break;
+            case 50:
+                $cc = 'tag';
+                break;
+            default:
+                $cc = 'cc';
+                break;
+        }
+        $mails = $this->getMailList('solicitudBaja_'.$cc);
+
+        $titulo = "Solicitud de baja: ".$name['NCorto'];
+        $rmp = $reemp ? "<span color='green'>SI</span>" : "<span color='red'>NO</span>";
+        $rct = $recont ? "<span color='green'>SI</span>" : "<span color='red'>NO</span>";
+        
+        $body = "<br><div><ul>Se ha registrado la siguiente <b>solicitud de baja</b> (<a href='https://operaciones.pricetravel.com.mx/cycv2/#/aprobaciones_rrhh'>Ver Solicitud</a>):\n";
+      
+        $body .= "<li>Asesor: <b>".$name['Nombre']."</b></li>\n";
+        $body .= "<li>Departamento: <b>".$name['depto']."</b></li>\n";
+        $body .= "<li>Solicitó: <b>".$name['NombreSol']."</b></li>\n";
+        $body .= "<li>Fecha: <b>$fecha</b></li>\n";
+        $body .= "<li>Recontratable: <b>$rct</b></li>\n";
+        $body .= "<li>Reemplazable: <b>$rmp</b></li>\n";
+
+        $body .= "</ul></div>\n";
+        
+        foreach( $mails as $index => $info ){
+            $text = '';
+            $text = "<p>Hola ".$info['Nombre'].",</p>".$body;
+            $this->sendMail($titulo, $info['usuario'], "solicitudBaja_$asesor", $text);
+        }
+
     }
     
 }

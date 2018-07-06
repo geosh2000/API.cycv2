@@ -823,7 +823,7 @@ class mailingV2{
         return $msg;
     }
 
-
+  
 
 }
 

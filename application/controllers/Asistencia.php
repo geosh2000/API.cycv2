@@ -24,8 +24,13 @@ class Asistencia extends REST_Controller {
       $inicio=$this->uri->segment(4);
       $fin=$this->uri->segment(5);
       $asesor = $this->uri->segment(6);
+      $noSup = $this->uri->segment(7);
+      $order = $this->uri->segment(8);
+
+      $noSupFlag = isset($noSup) && $noSup == 1 ? true : false;
+      $orderFlag = isset($order) && $order == 1 ? true : false;
         
-        if( isset($asesor) ){ 
+        if( isset($asesor) && $asesor != 0 ){ 
             $isAsesor = "asesor = $asesor";
         }else{
             $isAsesor = "IF(@dep=0, dep != 29, dep = @dep)";
@@ -226,8 +231,25 @@ class Asistencia extends REST_Controller {
       $inicio=$this->uri->segment(4);
       $fin=$this->uri->segment(5);
       $asesor = $this->uri->segment(6);
+      $noSup = $this->uri->segment(7);
+      $order = $this->uri->segment(8);
+
+      $noSupFlag = isset($noSup) && $noSup == 1 ? true : false;
+      $orderFlag = isset($order) && $order == 1 ? true : false;
+
+      if($noSupFlag){
+          $isSup = "AND a.puesto IN (1,2)";
+        }else{
+            $isSup = "";
+      }
+
+      if($orderFlag){
+          $orderPos = "Fecha, posicion";
+        }else{
+            $orderPos = "Fecha, Nombre ";
+      }
         
-        if( isset($asesor) ){ 
+        if( isset($asesor) && $asesor > 0 ){ 
             $isAsesor = "asesor = $asesor";
         }else{
             $isAsesor = "IF(@dep=0, dep != 29, dep = @dep)";
@@ -248,7 +270,7 @@ class Asistencia extends REST_Controller {
           dep_asesores a LEFT JOIN Asesores b ON a.asesor=b.id
       WHERE
           Fecha BETWEEN @inicio AND @fin AND vacante IS NOT NULL
-              AND $isAsesor");
+              AND $isAsesor $isSup");
       $this->db->query("ALTER TABLE asistenciaAsesores ADD PRIMARY KEY (`Fecha`, `asesor`)");
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS log_asesor");
@@ -378,7 +400,7 @@ class Asistencia extends REST_Controller {
           Ausentismo,
           Code_aus,
           Aus_caso, Aus_Nota, NOMBREASESOR(Aus_register,1) as Aus_Register, Aus_LU, Aus_Nombre, Aus_id,
-          Domingo, pdt
+          Domingo, pdt, posicion
       FROM
           log_asesor a
               LEFT JOIN
@@ -389,8 +411,10 @@ class Asistencia extends REST_Controller {
               AND a.asesor = c.asesor
               LEFT JOIN
           pyaTable d ON a.Fecha = d.Fecha AND a.asesor=d.asesor
+              LEFT JOIN
+          horarios_position_select e ON a.asesor=e.asesor AND WEEK(a.Fecha,1)=e.semana AND YEAR(a.Fecha)=e.year
       ORDER BY
-          Fecha, Nombre");
+          $orderPos");
 
           $q = $this->db->query("SELECT * FROM asistenciaTableResult");
 
@@ -411,7 +435,7 @@ class Asistencia extends REST_Controller {
         unset($data[$info['asesor']]['data'][$info['Fecha']]['Fecha']);
       }
 
-      okResponse('Horarios obtenidos', 'data', array('resultado' => $data['data'], 'detalle' => $data['detalle']), $this, 'array', $result);
+      okResponse('Horarios obtenidos', 'data', $data, $this, 'array', $result);
 
     });
 
@@ -1281,7 +1305,100 @@ class Asistencia extends REST_Controller {
 
         $this->response( $result );
     }
+
+    public function schedulesEditList_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $params = $this->put();
+
+            $this->db->select("a.asesor, a.Fecha, b.id, js, je, x1s, x1e, x2s, x2e, cs, ce, NOMBREASESOR(a.asesor, 2) AS Nombre, IF(d.id IS NOT NULL, CASE WHEN c.a = 1 THEN d.Ausentismo WHEN c.b THEN 'Beneficio' WHEN c.d THEN 'Descanso' END,NULL) as aus", FALSE)
+            ->from("dep_asesores a")
+            ->join("asesores_programacion b", "a.asesor=b.asesor AND a.Fecha=b.Fecha", 'left')
+            ->join("asesores_ausentismos c", "a.asesor=c.asesor AND a.Fecha=c.Fecha", 'left')
+            ->join("config_tiposAusentismos d", "c.ausentismo=d.id", 'left')
+            ->where_in('a.asesor', $params['asesores'])
+            ->where('a.Fecha >=', $params['inicio'] )
+            ->where('a.Fecha <=', $params['fin'] )
+            ->order_by('Nombre')
+            ->order_by('b.Fecha');
+
+            if( $q = $this->db->get() ){
+                okResponse( 'Programación recibida', 'data', $q->result_array(), $this );
+            }else{
+                errResponse( "Error en la base de datos", REST_Controller::HTTP_BAD_REQUEST, $this, 'errores', $this->db->error() );
+            }
+        
+            return true;
     
+        });
+    }
+    
+    public function schedulesChargeSave_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+
+            $error = array();
+
+            foreach($data as $item => $info){
+                $insert = array( 
+                    'Fecha' => $info['Fecha'], 
+                    'asesor' => $info['asesor'], 
+                    'jornada start' => $info['js'] == null ? null : date("H:i", strtotime($info['js'])).":00", 
+                    'jornada end' => $info['je'] == null ? null : date("H:i", strtotime($info['je'])).":00", 
+                    'extra1 start' => $info['x1s'] == null ? null : date("H:i", strtotime($info['x1s'])).":00", 
+                    'extra1 end' => $info['x1e'] == null ? null : date("H:i", strtotime($info['x1e'])).":00", 
+                    'extra2 start' => $info['x2s'] == null ? null : date("H:i", strtotime($info['x2s'])).":00", 
+                    'extra2 end' => $info['x2e'] == null ? null : date("H:i", strtotime($info['x2e'])).":00", 
+                    'comida start' => $info['cs'] == null ? null : date("H:i", strtotime($info['cs'])).":00", 
+                    'comida end' => $info['ce'] == null ? null : date("H:i", strtotime($info['ce'])).":00"
+                );
+                $upd = " ON DUPLICATE KEY UPDATE ";
+                $fields = "(";
+                $values = "(";
+                
+                foreach($insert as $key => $field){
+                    $value = $field == null ? "NULL" : "'$field'";
+                    $upd .= "`$key` = $value, ";
+
+                    $fields .= "`$key`, ";
+                    $values .= "$value, ";
+                }
+
+                $upd = substr($upd,0,-2);
+                $fields = substr($fields,0,-2).")";
+                $values = substr($values,0,-2).")";
+
+                $ins = "INSERT INTO `Historial Programacion` $fields VALUES $values";
+                $query = $ins.$upd;
+                if(!$this->db->query($query)){
+                    array_push($error, array( 'Fecha' => $info['Fecha'], 'asesor' => $info['asesor'] ) );
+                }
+
+                $nUpd = " ON DUPLICATE KEY UPDATE ";
+                foreach($info as $key => $field){
+                    if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' ){
+                        $value = $field == null ? "NULL" : "'$field'";
+                        $nUpd .= "`$key` = $value, ";
+                    }
+                }
+                $nUpd = substr($nUpd,0,-2);
+
+                $nIns = $this->db->set($info)->get_compiled_insert('asesores_programacion');
+                $nQ = $nIns.$nUpd;
+                $this->db->query($nQ);
+            }
+
+            if( count( $error ) == 0 ){
+                okResponse( count($data).' elemento(s) guardados', 'data', true, $this );
+            }else{
+                errResponse( "Error en la base de datos. ".count( $error )." elementos con errores", REST_Controller::HTTP_BAD_REQUEST, $this, 'errores', $errores );
+            }
+        
+            return true;
+    
+        });
+    }
     
     
 }

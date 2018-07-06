@@ -18,6 +18,10 @@ class MundialFutbol extends REST_Controller {
   public function partidos_get(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $conf = $this->db->query("SELECT * FROM mundial2018_config");
+        $config = $conf->row_array();
+        $stage = $config['stage'];
         
         $query = "SELECT 
                         a.*,
@@ -37,7 +41,7 @@ class MundialFutbol extends REST_Controller {
                             LEFT JOIN
                         mundial2018_quiniela qn ON a.id = qn.id AND qn.asesor = ".$_GET['usid']."
                     WHERE
-                        a.local = 1";
+                        a.local = 1 AND idStage IN ($stage)";
           
       if( $q = $this->db->query($query) ){    
         okResponse( 'Información Obtenida', 'data', $q->result_array(), $this );
@@ -52,6 +56,10 @@ class MundialFutbol extends REST_Controller {
   public function tablaQuiniela_get(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $conf = $this->db->query("SELECT * FROM mundial2018_config");
+        $config = $conf->row_array();
+        $stage = $config['stage'];
 
         $qDep = "SELECT dep FROM dep_asesores WHERE Fecha=CURDATE() AND asesor=".$_GET['usid'];
         $qD = $this->db->query($qDep);
@@ -82,7 +90,7 @@ class MundialFutbol extends REST_Controller {
                         LEFT JOIN 
                     dep_asesores c ON qn.asesor=c.asesor AND c.Fecha=CURDATE()
                 WHERE
-                    a.local = 1 $pdv 
+                    a.local = 1 AND idStage IN ($stage) $pdv 
                 GROUP BY qn.asesor ORDER BY pts DESC, Nombre";
           
       if( $q = $this->db->query($query) ){    

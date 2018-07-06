@@ -1276,9 +1276,18 @@ class SolicitudBC extends REST_Controller {
     }
 
     public function testMail_get(){
+
+      $asesor = $this->uri->segment(3);
+      $fecha = $this->uri->segment(4);
+      $reemp = $this->uri->segment(5);
+      $recont = $this->uri->segment(6);
+
+      $reemp = $reemp == 1 ? true : false;
+      $recont = $recont == 1 ? true : false;
         
-        $user = $this->uri->segment(3);
-        test::testMail($this);
+      require_once(APPPATH.'controllers/Mailing.php'); //include controller
+      $mail = new Mailing();  //create object 
+      $mail->bajaSolicitud( $asesor, $_GET['usid'], $fecha, $reemp, $recont ); //call function
     }
 
 }
