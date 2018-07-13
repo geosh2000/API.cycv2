@@ -648,8 +648,9 @@ public function pyaV2_get(){
         unset($data[$info['asesor']]['data'][$info['Fecha']]['Colaborador']);
         unset($data[$info['asesor']]['data'][$info['Fecha']]['Fecha']);
       }
-
-      okResponse('Horarios obtenidos', 'data', $data, $this, 'array', $result);
+      $comida = $this->db->query("SELECT comida FROM dep_asesores WHERE Fecha=ADDDATE(ADDDATE(CURDATE(),-WEEKDAY(CURDATE())),7) AND asesor=$asesor");
+      $cRow = $comida->row_array();
+      okResponse('Horarios obtenidos', 'data', $data, $this, 'array', array('array' => $result, 'comida' => $cRow['comida'] ));
 
     });
 

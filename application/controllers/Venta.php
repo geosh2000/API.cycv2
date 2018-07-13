@@ -136,6 +136,7 @@ class Venta extends REST_Controller {
                 
 
         $tableLocs = $this->db->get_compiled_select();
+        okResponse('query', 'query', $tableLocs, $this);
 
         IF($this->db->query("CREATE TEMPORARY TABLE locs $tableLocs")){
 
