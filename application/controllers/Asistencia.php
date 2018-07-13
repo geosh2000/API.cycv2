@@ -31,7 +31,8 @@ class Asistencia extends REST_Controller {
       $orderFlag = isset($order) && $order == 1 ? true : false;
         
         if( isset($asesor) && $asesor != 0 ){ 
-            $isAsesor = "asesor = $asesor";
+            $isAsesor = "asesor IN (".str_replace('|', ',', $asesor).")";
+            okResponse('success', 'data', $isAsesor, $this);
         }else{
             $isAsesor = "IF(@dep=0, dep != 29, dep = @dep)";
             $this->db->query("SET @dep = $dep");
@@ -223,7 +224,220 @@ class Asistencia extends REST_Controller {
 
   }
 
-    public function pyaV2_get(){
+  public function pya_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $params = $this->put();
+
+        $dep    = $params['dep']; 
+        $inicio = $params['inicio']; 
+        $fin    = $params['fin'];
+        $asesor = $params['asesor']; 
+        $noSup  = $params['noSup']; 
+        $order  = $params['order']; 
+
+        $noSupFlag = isset($noSup) && $noSup == 1 ? true : false;
+        $orderFlag = isset($order) && $order == 1 ? true : false;
+        
+        if( isset($asesor) && $asesor != 0 ){ 
+            $isAsesor = "asesor IN (";
+            foreach($asesor as $index => $item){
+                $isAsesor .= $item.",";
+            }
+            $isAsesor = substr($isAsesor,0,-1).")";
+        }else{
+            $isAsesor = "IF(@dep=0, dep != 29, dep = @dep)";
+            $this->db->query("SET @dep = $dep");
+        }
+
+      $this->db->query("SET @inicio = CAST('$inicio' as DATE)");
+      $this->db->query("SET @fin = CAST('$fin' as DATE)");
+      
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS asistenciaAsesores");
+      $this->db->query("CREATE TEMPORARY TABLE asistenciaAsesores SELECT
+          a.*,
+          IF(vacante IS NOT NULL, num_colaborador, NULL) as Colaborador,
+          IF(vacante IS NOT NULL, NOMBREDEP(dep), NULL) as Departamento,
+          IF(vacante IS NOT NULL, NOMBREPUESTO(a.puesto), NULL) as PuestoName,
+          esquema
+      FROM
+          dep_asesores a LEFT JOIN Asesores b ON a.asesor=b.id
+      WHERE
+          Fecha BETWEEN @inicio AND @fin AND vacante IS NOT NULL
+              AND $isAsesor");
+      $this->db->query("ALTER TABLE asistenciaAsesores ADD PRIMARY KEY (`Fecha`, `asesor`)");
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS log_asesor");
+      $this->db->query("CREATE TEMPORARY TABLE log_asesor (SELECT
+          a.*,
+      	b.id as h_id,
+          js, je, x1s, x1e, x2s, x2e, cs, ce, phx,
+          checkLog(a.Fecha, a.asesor, 'in') AS login,
+          checkLog(a.Fecha, a.asesor, 'out') AS logout
+      FROM
+          asistenciaAsesores a
+              LEFT JOIN
+          asesores_programacion b ON a.asesor = b.asesor AND a.Fecha = b.Fecha)");
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS xtraTime");
+      $this->db->query("CREATE TEMPORARY TABLE xtraTime SELECT
+      	a.Fecha, a.asesor,
+      	IF(login IS NOT NULL,
+          IF(login<=js AND logout>js,
+            js,
+            login
+          ),
+          NULL) as j_login,
+        IF(logout IS NOT NULL,
+          IF(logout>je AND login<=je,
+            je,
+            logout),
+          NULL) as j_logout,
+
+      	IF(x1s!=x1e,IF(login<x1e AND logout>=x1s,IF(login<x1s,x1s,login),NULL),NULL) as x1_login,
+		IF(x1s!=x1e,IF(login<x1e AND logout>=x1s,IF(logout>x1e,x1e,logout),NULL),NULL) as x1_logout,
+      	IF(x2s!=x2e,IF(login<x2e AND logout>=x2s,IF(login<x2s,x2s,login),NULL),NULL) as x2_login,
+      	IF(x2s!=x2e,IF(login<x2e AND logout>=x2s,IF(logout>x2e,x2e,logout),NULL),NULL) as x2_logout
+      FROM
+      	log_asesor a");
+
+
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS ausTable");
+      $this->db->query("CREATE TEMPORARY TABLE ausTable SELECT
+                  a.Fecha,
+                  a.asesor,
+                  b.id as ausentismoId,
+                  b.ausentismo as Aus_id,
+                  IF(js = je, 1, 0) AS Descanso,
+                  CASE
+                      WHEN login IS NULL THEN 0
+                      WHEN login IS NOT NULL THEN 1
+                  END AS Asistencia,
+                  pdt,
+                  CASE
+                      WHEN b.ausentismo IS NULL THEN 0
+                      ELSE 1
+                  END AS Ausentismo,
+                  caso as Aus_Caso,
+                  comments as Aus_Nota,
+                  changed_by as Aus_register,
+                  b.Last_Update as Aus_LU, c.Ausentismo as Aus_Nombre,
+                  CASE
+                      WHEN b.ausentismo IS NOT NULL THEN
+                          CASE
+                              WHEN b.a = 1 THEN c.Code
+                              WHEN b.d = 1 THEN 'D'
+                              WHEN b.b = 1 THEN 'B'
+                          END
+                      ELSE NULL
+                  END AS Code_aus,
+                  IF(WEEKDAY(a.Fecha) + 1 = 7, 1, 0) AS Domingo
+          FROM
+              log_asesor a
+          LEFT JOIN asesores_ausentismos b ON a.asesor = b.asesor
+              AND a.Fecha = b.Fecha
+          LEFT JOIN config_tiposAusentismos c ON b.ausentismo = c.id");
+
+      $this->db->query("ALTER TABLE log_asesor ADD PRIMARY KEY (`Fecha`, `asesor`)");
+      $this->db->query("ALTER TABLE xtraTime ADD PRIMARY KEY (`Fecha`, `asesor`)");
+      $this->db->query("ALTER TABLE ausTable ADD PRIMARY KEY (`Fecha`, `asesor`)");
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS pyaTable");
+      $this->db->query("CREATE TEMPORARY TABLE pyaTable SELECT
+                  Fecha, asesor,
+                  tipo,
+                  caso,
+                  Nota,
+                  Last_Update,
+                  changed_by as reg_by,
+                  Excepcion,
+                  Codigo
+          FROM
+              asesores_pya_exceptions a
+          LEFT JOIN config_tipos_pya_exceptions b ON a.tipo = b.id
+          WHERE Fecha BETWEEN @inicio AND @fin");
+      $this->db->query("ALTER TABLE pyaTable ADD PRIMARY KEY (Fecha, asesor)");
+
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS asistenciaTableResult");
+      $this->db->query("CREATE TEMPORARY TABLE asistenciaTableResult SELECT
+      	NOMBREASESOR(a.asesor,2) as Nombre,
+          a . *,
+          j_login,
+          j_logout,
+          x1_login,
+          x1_logout,
+          x2_login,
+          x2_logout,
+          IF(Descanso=0 AND j_logout<je,1,0) as SalidaAnticipada,
+          IF(Descanso=0,TIMESTAMPDIFF(SECOND,j_login,j_logout)/TIMESTAMPDIFF(SECOND,js,je)*100,null) as tiempoLaborado,
+          CASE
+              WHEN j_login > ADDTIME(js, '00:13:00') THEN 'RT-B'
+              WHEN j_login >= ADDTIME(js, '00:01:00') THEN 'RT-A'
+              ELSE NULL
+          END as Retardo,
+          CASE
+              WHEN j_login >= ADDTIME(js, '00:01:00') THEN ADDTIME(j_login, - js)
+              ELSE NULL
+          END as Retardo_time,
+          d.tipo as RT_tipo,
+          d.caso as RT_caso,
+          d.Nota as RT_Nota,
+          d.Last_Update as RT_LU,
+          NOMBREASESOR(d.reg_by,1) as RT_register,
+          d.Excepcion as RT_Excepcion,
+          d.Codigo as RT_Codigo,
+          Descanso,
+          Asistencia,
+          ausentismoId,
+          Ausentismo,
+          Code_aus,
+          Aus_caso, Aus_Nota, NOMBREASESOR(Aus_register,1) as Aus_Register, Aus_LU, Aus_Nombre, Aus_id,
+          Domingo, pdt
+      FROM
+          log_asesor a
+              LEFT JOIN
+          xtraTime b ON a.Fecha = b.Fecha
+              AND a.asesor = b.asesor
+              LEFT JOIN
+          ausTable c ON a.Fecha = c.Fecha
+              AND a.asesor = c.asesor
+              LEFT JOIN
+          pyaTable d ON a.Fecha = d.Fecha AND a.asesor=d.asesor
+      ORDER BY
+          Fecha, Nombre");
+
+          $q = $this->db->query("SELECT * FROM asistenciaTableResult");
+
+      $result = $q->result_array();
+
+      foreach($result as $index => $info){
+        $fechas[$info['Fecha']]=1;
+        $data[$info['asesor']]['Nombre']=$info['Nombre'];
+        $data[$info['asesor']]['PuestoName']=$info['PuestoName'];
+        $data[$info['asesor']]['Colaborador']=$info['Colaborador'];
+        $data[$info['asesor']]['Departamento']=$info['Departamento'];
+        $data[$info['asesor']]['data'][$info['Fecha']]=$info;
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['asesor']);
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['Nombre']);
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['PuestoName']);
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['Departamento']);
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['Colaborador']);
+        unset($data[$info['asesor']]['data'][$info['Fecha']]['Fecha']);
+      }
+
+      return array('Fechas' => $fechas, 'data' => $data);
+
+    });
+
+    $this->response($result);
+
+
+  }
+
+public function pyaV2_get(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
@@ -250,7 +464,7 @@ class Asistencia extends REST_Controller {
       }
         
         if( isset($asesor) && $asesor > 0 ){ 
-            $isAsesor = "asesor = $asesor";
+            $isAsesor = "asesor IN ($asesor)";
         }else{
             $isAsesor = "IF(@dep=0, dep != 29, dep = @dep)";
             $this->db->query("SET @dep = $dep");

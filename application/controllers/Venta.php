@@ -77,7 +77,7 @@ class Venta extends REST_Controller {
          }
     }
 
-    private function ventaMP($inicio, $fin, $type, $td=false){
+    private function ventaMP($inicio, $fin, $type, $td=false, $mp = true){
 
         $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
 
@@ -107,7 +107,7 @@ class Venta extends REST_Controller {
                             END
                                 WHEN a.asesor>=0 THEN
                                     CASE
-                                        WHEN dep = 5 THEN
+                                        WHEN dep IN (5,52) THEN
                                             CASE
                                                 WHEN tipo = 2 THEN 'CC IN'
                                                 ELSE 'CC OUT'
@@ -126,12 +126,19 @@ class Venta extends REST_Controller {
                 ->join("chanGroups b", "a.chanId = b.id", "left")
                 ->join("dep_asesores c", "a.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
                 ->join("cc_apoyo d", "a.asesor = d.asesor AND a.Fecha BETWEEN d.inicio AND d.fin", "left")
-                ->where($fecha, $fechaVar, FALSE)
-                ->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX', 'gpoCanalKPI !=' => 'Outlet' ) );
+                ->where($fecha, $fechaVar, FALSE);
+        
+        if( $mp ){
+            $this->db->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX', 'gpoCanalKPI !=' => 'Outlet' ) );
+        }else{
+            $this->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Agencias', 'gpoCanalKpi !=' => 'Avianca') );
+        }
+                
 
         $tableLocs = $this->db->get_compiled_select();
 
         IF($this->db->query("CREATE TEMPORARY TABLE locs $tableLocs")){
+
         return true;
         }else{
         errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
@@ -140,7 +147,7 @@ class Venta extends REST_Controller {
 
     }
 
-    private function ventaProducto($inicio, $fin, $type, $td=false){
+    private function ventaProducto($inicio, $fin, $type, $td=false, $mp = true){
 
         $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsProd");
 
@@ -158,12 +165,18 @@ class Venta extends REST_Controller {
                 ->select("IF(VentaMXN>0, Localizador, NULL) as NewLoc", FALSE)
                 ->from("$table a")
                 ->join("chanGroups b", "a.chanId = b.id", "left")
-                ->where($fecha, $fechaVar, FALSE)
-                ->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX' ) );
+                ->where($fecha, $fechaVar, FALSE);
+
+        if( $mp ){
+            $this->db->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX' ) );
+        }else{
+            $this->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Agencias', 'gpoCanalKpi !=' => 'Avianca') );
+        }
 
         $tableLocs = $this->db->get_compiled_select();
 
-        IF($this->db->query("CREATE TEMPORARY TABLE locsProd $tableLocs")){
+        IF($this->db->query("CREATE TEMPORARY TABLE locsProd $tableLocs")){    
+       
         return true;
         }else{
         errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
@@ -188,6 +201,7 @@ class Venta extends REST_Controller {
                 $pq = $this->uri->segment(9);
                 $ml = $this->uri->segment(10);
                 $h = $this->uri->segment(11);
+                $mt = $this->uri->segment(12);
             // ======================================================================
             // END Get Inputs
             // ======================================================================
@@ -210,6 +224,7 @@ class Venta extends REST_Controller {
                 $td = $td == 1 ? true : false;
                 $prod = $prodIn == 1 ? true : false;
                 $isPaq = $pq == 'true' ? "WHEN isPaq != 0 THEN 'Paquete'" : "";
+                $mp = isset($mt) && $mt==1 ? false : true;
 
                 if( $h == 1 ){
                     $end = $start;
@@ -227,11 +242,11 @@ class Venta extends REST_Controller {
                     $this->db->query("DROP TEMPORARY TABLE IF EXISTS porHora");
                     $this->db->query("CREATE TEMPORARY TABLE porHora 
                                             SELECT 
-                                                DISTINCT Localizador, HOUR(Hora) + IF(MINUTE(Hora) >= 30, .5, 0) AS H
+                                                Localizador, HOUR(Hora) + IF(MINUTE(Hora) >= 30, .5, 0) AS H
                                             FROM
                                                 t_Locs
                                             WHERE
-                                                Fecha = '$start' AND VentaMXN > 0");
+                                                Fecha = '$start' AND VentaMXN > 0 GROUP BY Localizador");
                     $this->db->query("ALTER TABLE porHora ADD PRIMARY KEY (Localizador)");
                 }
             // ======================================================================
@@ -241,7 +256,7 @@ class Venta extends REST_Controller {
             // ======================================================================
             // START Venta Query
             // ======================================================================
-                if($this->ventaMP($start, $end, $t, $td)){
+                if($this->ventaMP($start, $end, $t, $td, $mp)){
 
                     $this->db->query("DROP TEMPORARY TABLE IF EXISTS soloVenta");
 
@@ -271,7 +286,7 @@ class Venta extends REST_Controller {
 
                     if($prod){
 
-                        if($this->ventaProducto($start, $end, $t, $td)){
+                        if($this->ventaProducto($start, $end, $t, $td, $mp)){
                             $this->db->query("DROP TEMPORARY TABLE IF EXISTS soloVentaProd");
 
                             $this->db->select("Fecha, Localizador, item, itemType, categoryId, isPaq")
@@ -358,7 +373,7 @@ class Venta extends REST_Controller {
 
                     if($q = $this->db->get()){
                         $result = $q->result_array();
-
+                        
                         foreach($result as $index => $info){
                             if($info['Monto'] == NULL){
                                 $monto = 0;
