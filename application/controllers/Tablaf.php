@@ -10,6 +10,7 @@ class Tablaf extends REST_Controller {
   public function __construct(){
 
     parent::__construct();
+    $this->load->helper('base_venta');
     $this->load->helper('json_utilities');
     $this->load->helper('validators');
     $this->load->helper('jwt');
@@ -29,9 +30,9 @@ class Tablaf extends REST_Controller {
             
             // Incluye o excluye el canal de agencias
             if($skill == 7){
-                $agencias = "";
+                $ag = true;
             }else{
-                $agencias = "AND gpoCanalKpi!='Agencias'";
+                $ag = false;
             }
             
             // Incluye a todos los paises para MT
@@ -43,12 +44,12 @@ class Tablaf extends REST_Controller {
 
             // Definición de parámetros por skill
             $params = array(
-                '3'     => array( 'skin' => '3', 'skout' => '52', 'skill' => "(3,52)", 'marca' => "'Marcas Terceros'" ),
-                '7'     => array( 'skin' => '7', 'skout' => '7', 'skill' => "(7)", 'marca' => "'Marcas Terceros'" ),
-                '8'     => array( 'skin' => '8', 'skout' => '8', 'skill' => "(8)", 'marca' => "'Marcas Terceros'" ),
-                '9'     => array( 'skin' => '9', 'skout' => '9', 'skill' => "(9)", 'marca' => "'Marcas Terceros'" ),
-                '4'     => array( 'skin' => '4', 'skout' => '4', 'skill' => "(4)", 'marca' => "'Marcas Terceros'" ),
-                '35'    => array( 'skin' => '35', 'skout' => '5', 'skill' => "(35,5,50)", 'marca' => "'Marcas Propias'" )
+                '3'     => array( 'skin' => '3', 'skout' => '52', 'skill' => "(3,52)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+                '7'     => array( 'skin' => '7', 'skout' => '7', 'skill' => "(7)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+                '8'     => array( 'skin' => '8', 'skout' => '8', 'skill' => "(8)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+                '9'     => array( 'skin' => '9', 'skout' => '9', 'skill' => "(9)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+                '4'     => array( 'skin' => '4', 'skout' => '4', 'skill' => "(4)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+                '35'    => array( 'skin' => '35', 'skout' => '5', 'skill' => "(35,5,50)", 'marca' => "'Marcas Propias'", 'mp' => true )
             );
         // =================================================
         // END Params
@@ -67,53 +68,7 @@ class Tablaf extends REST_Controller {
         // =================================================
         // START Query Locs
         // =================================================
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
-            $this->db->query("CREATE TEMPORARY TABLE locs
-                                SELECT 
-                                        a.Fecha,
-                                        Localizador,
-                                        gpoCanalKpi,
-                                        cc,
-                                        a.asesor as asesorLoc,
-                                        tipoRsva,
-                                        SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS Monto,
-                                        IF(SUM(VentaMXN) > 0, Localizador, NULL) AS NewLoc,
-                                        IF(tipoRsva LIKE '%OUT%' AND SUM(VentaMXN) > 0
-                                                AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                            Localizador,
-                                            NULL) AS CountLocOut,
-                                        IF(tipoRsva LIKE '%IN' AND SUM(VentaMXN) > 0
-                                                AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                            Localizador,
-                                            NULL) AS CountLocIn,
-                                        IF(SUM(VentaMXN) >= 0
-                                                OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                            Localizador,
-                                            NULL) AS ModifLoc
-                                    FROM
-                                        t_Locs a
-                                            LEFT JOIN
-                                        chanGroups b ON a.chanId = b.id
-                                            LEFT JOIN
-                                        dep_asesores c ON a.asesor = c.asesor
-                                            AND a.Fecha = c.Fecha
-                                            LEFT JOIN cc_apoyo e ON a.asesor=e.asesor AND a.Fecha BETWEEN e.inicio AND e.fin
-                                            LEFT JOIN
-                                        config_tipoRsva d ON IF(c.dep IS NULL,
-                                            IF(a.asesor = - 1, - 1, 0),
-                                            IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
-                                                0,
-                                                IF(c.dep = 29 AND cc IS NOT NULL, 35, c.dep))) = d.dep
-                                            AND IF(a.tipo IS NULL OR a.tipo = '',
-                                            0,
-                                            a.tipo) = d.tipo 
-                                    WHERE
-                                        a.Fecha BETWEEN @inicio AND @fin
-                                            AND marca = @marca
-                                            AND gpoCanalKpi != 'Outlet'
-                                            $pais 
-                                            $agencias
-                                    GROUP BY Fecha , Localizador;");
+            venta_help::ventaF($this, $inicio, $fin, false, false, $skill, $ag);
         // =================================================
         // END Query Locs
         // =================================================
@@ -122,64 +77,27 @@ class Tablaf extends REST_Controller {
         // START Query KPIs Venta
         // =================================================
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS kpisVenta");
-            $this->db->query("CREATE TEMPORARY TABLE kpisVenta
-                SELECT 
-                    a.Fecha,
-                    CASE 
-                        WHEN asesorLoc = 0 AND 3 != ".$params[$skill]['skin']." THEN 0
-                        WHEN tipoRsva LIKE '%Tag%' THEN 50 
-                        WHEN tipoRsva LIKE '%Out' THEN ".$params[$skill]['skout']."
-                        WHEN tipoRsva LIKE '%IN' THEN ".$params[$skill]['skin']."
-                        WHEN tipoRsva LIKE '%Presencial%' THEN 29 ELSE 0 END as Skill,
-                    CASE
-                        WHEN asesorLoc = 0 THEN 'Otros'
-                        WHEN tipoRsva LIKE '%PDV%' THEN
-                            CASE 
-                                WHEN cc IS NULL THEN 'PDV'
-                                WHEN cc IS NOT NULL THEN 'Apoyo'
-                            END
-                        WHEN tipoRsva LIKE '%Presencial%' THEN 'Presencial'
-                        WHEN tipoRsva LIKE '%online%' THEN 'Online'
-                        WHEN tipoRsva LIKE '%out%' THEN
-                            CASE
-                                WHEN tipoRsva LIKE 'out' THEN 'CC'
-                                WHEN tipoRsva LIKE '%Tag%' THEN 'CC'
-                                ELSE 'Otros'
-                            END
-                        WHEN tipoRsva LIKE '%IN' THEN
-                            CASE 
-                                WHEN cc IS NULL THEN 'CC'
-                                WHEN cc IS NOT NULL THEN 'Apoyo'
-                            END
-                        ELSE 'CC'
-                    END as Grupo,
-                    SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS monto,
-                    SUM(IF(servicio = 'Hotel',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                        0)) AS monto_hotel,
-                    SUM(IF(servicio = 'Tour',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                        0)) AS monto_tour,
-                    SUM(IF(servicio = 'Transfer',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                        0)) AS monto_transfer,   
-                    SUM(clientNights) AS RN,
-                    SUM(costo) AS margen,
-                    COUNT(DISTINCT CountLocOut) AS LocsOut,
-                    COUNT(DISTINCT CountLocIn) AS LocsIn
-                FROM
-                    t_hoteles_test a
-                        RIGHT JOIN
-                    locs b ON a.Localizador = b.Localizador
-                        AND a.Fecha = b.Fecha
-                        LEFT JOIN
-                    itemTypes c ON itemType = c.type
-                        AND categoryId = c.category
-                        LEFT JOIN
-                    t_margen d ON a.Localizador = d.Localizador
-                        AND a.item = d.Item
-                        AND a.Fecha = d.Fecha
-                GROUP BY a.Fecha , Skill, Grupo");
+            $query = "SELECT 
+                        Fecha,
+                        Skill,
+                        Grupo,
+                        SUM(monto) AS monto,
+                        SUM(monto_hotel) AS monto_hotel,
+                        SUM(monto_tour) AS monto_tour,
+                        SUM(monto_transfer) AS monto_transfer,
+                        SUM(monto_vuelo) AS monto_vuelo,
+                        SUM(monto_seguro) AS monto_seguro,
+                        SUM(RNs) AS RN,
+                        SUM(margen) AS margen,
+                        COUNT(DISTINCT CountLocOut) AS LocsOut,
+                        COUNT(DISTINCT CountLocIn) AS LocsIn
+                    FROM
+                    locsProdF
+                    GROUP BY Fecha , Skill , Grupo";
+            $this->db->query("CREATE TEMPORARY TABLE kpisVenta $query"); 
+            // $q = $this->db->query($query);
+            // $q = $this->db->query("SELECT * FROM locsProdF");
+            // okResponse('data', 'test', $q->result_array(),$this, 'q', $query);
         // =================================================
         // END Query KPIs Venta
         // =================================================
@@ -237,7 +155,7 @@ class Tablaf extends REST_Controller {
                                     AND skill IN ".$params[$skill]['skill']);
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS logsOK");
-            $this->db->query("CREATE TEMPORARY TABLE logsOK SELECT 
+            $query = "SELECT 
                                 CAST(login AS DATE) AS FechaOK,
                                 skill,
                                 CASE
@@ -256,7 +174,9 @@ class Tablaf extends REST_Controller {
                                 COUNT(DISTINCT DistAsesor) as HC_dia
                             FROM
                                 logAsesores
-                            GROUP BY FechaOK , skill, grupo");
+                            GROUP BY FechaOK , skill, grupo";
+            $this->db->query("CREATE TEMPORARY TABLE logsOK $query");
+            
         // =================================================
         // END Query Logueo Asesores
         // =================================================

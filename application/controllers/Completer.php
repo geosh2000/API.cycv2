@@ -39,7 +39,7 @@ class Completer extends REST_Controller {
       
       $this->codigosName();
       
-      $this->db->select("a.id as asesor, Nombre, CONCAT('(',IF(c.pcrc IS NULL, 'Otro', c.pcrc),' - ',puesto_name,')') as dep, IF(Egreso>CURDATE(),1,0) as Activo", FALSE)
+      $this->db->select("a.id as asesor, Nombre, CONCAT('(',IF(Egreso>CURDATE(),'','INACTIVO - '),IF(c.pcrc IS NULL, 'Otro', c.pcrc),' - ',puesto_name,')') as dep, IF(Egreso>CURDATE(),1,0) as Activo", FALSE)
           ->select("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER($field),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a') as searchTerm")
           ->from('Asesores a')
           ->join('dep_asesores b', 'a.id=b.asesor AND b.Fecha=CURDATE()', 'left', FALSE)

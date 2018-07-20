@@ -11,6 +11,7 @@ class Venta extends REST_Controller {
 
         parent::__construct();
         $this->load->helper('json_utilities');
+        $this->load->helper('base_venta');
         $this->load->helper('validators');
         $this->load->helper('jwt');
         $this->load->database();
@@ -77,115 +78,6 @@ class Venta extends REST_Controller {
          }
     }
 
-    private function ventaMP($inicio, $fin, $type, $td=false, $mp = true){
-
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
-
-        if($type){
-        $pdvType = "WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial'";
-        }else{
-        $pdvType = "WHEN tipo = 1 THEN 'CC OUT'
-                    WHEN tipo = 2 THEN 'PDV IN'
-                    ELSE 'PDV Presencial'";
-        }
-
-        if($td){
-        $table = "d_Locs";
-        $fecha = "a.Fecha";
-        $fechaVar = "CURDATE()";
-        }else{
-        $table = "t_Locs";
-        $fecha = "a.Fecha BETWEEN";
-        $fechaVar = "'$inicio' AND '$fin'";
-        }
-
-        $this->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal, dep, vacante, puesto")
-                ->select("case
-                                WHEN gpoCanalKpi = 'PDV' THEN
-                            CASE
-                                $pdvType
-                            END
-                                WHEN a.asesor>=0 THEN
-                                    CASE
-                                        WHEN dep IN (5,52) THEN
-                                            CASE
-                                                WHEN tipo = 2 THEN 'CC IN'
-                                                ELSE 'CC OUT'
-                                            end
-                                        WHEN dep = 29 THEN 
-                                            CASE 
-                                                WHEN d.cc LIKE '%mixcoac%' THEN 'Mixcoac'
-                                                ELSE 'PDV IN'
-                                            END
-                                        ELSE 'CC IN'
-                                    end
-                                ELSE 'Online'
-                            end gpoInterno", FALSE)
-                ->select("IF(VentaMXN>0, Localizador, NULL) as NewLoc", FALSE)
-                ->from("$table a")
-                ->join("chanGroups b", "a.chanId = b.id", "left")
-                ->join("dep_asesores c", "a.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
-                ->join("cc_apoyo d", "a.asesor = d.asesor AND a.Fecha BETWEEN d.inicio AND d.fin", "left")
-                ->where($fecha, $fechaVar, FALSE);
-        
-        if( $mp ){
-            $this->db->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX', 'gpoCanalKPI !=' => 'Outlet' ) );
-        }else{
-            $this->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Agencias', 'gpoCanalKpi !=' => 'Avianca') );
-        }
-                
-
-        $tableLocs = $this->db->get_compiled_select();
-        okResponse('query', 'query', $tableLocs, $this);
-
-        IF($this->db->query("CREATE TEMPORARY TABLE locs $tableLocs")){
-
-        return true;
-        }else{
-        errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-        }
-
-
-    }
-
-    private function ventaProducto($inicio, $fin, $type, $td=false, $mp = true){
-
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsProd");
-
-        if($td){
-        $table = "t_hoteles_test";
-        $fecha = "a.Fecha";
-        $fechaVar = "CURDATE()";
-        }else{
-        $table = "t_hoteles_test";
-        $fecha = "a.Fecha BETWEEN";
-        $fechaVar = "'$inicio' AND '$fin'";
-        }
-
-        $this->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal")
-                ->select("IF(VentaMXN>0, Localizador, NULL) as NewLoc", FALSE)
-                ->from("$table a")
-                ->join("chanGroups b", "a.chanId = b.id", "left")
-                ->where($fecha, $fechaVar, FALSE);
-
-        if( $mp ){
-            $this->db->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX' ) );
-        }else{
-            $this->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Agencias', 'gpoCanalKpi !=' => 'Avianca') );
-        }
-
-        $tableLocs = $this->db->get_compiled_select();
-
-        IF($this->db->query("CREATE TEMPORARY TABLE locsProd $tableLocs")){    
-       
-        return true;
-        }else{
-        errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-        }
-
-
-    }
-
     public function getVentaPorCanalSV_get(){
 
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
@@ -232,6 +124,12 @@ class Venta extends REST_Controller {
                 }
                 $isHour = $h == 1 ? true : false;
 
+                if( $mp ){
+                    $pais = 'MX';
+                }else{
+                    $pais = null;
+                }
+
             // ======================================================================
             // END Parameters
             // ======================================================================
@@ -257,175 +155,121 @@ class Venta extends REST_Controller {
             // ======================================================================
             // START Venta Query
             // ======================================================================
-                if($this->ventaMP($start, $end, $t, $td, $mp)){
+            if($sv == 1){
+                $qSV = "IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) < 0
+                                AND NewLoc IS NOT NULL)
+                                OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) >= 0,
+                            SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN),
+                            0) as Monto,
+                        COUNT(DISTINCT newLoc) as Locs,";
+            }else{
+                $qSV = "SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) as Monto, COUNT(DISTINCT Localizador) as Locs,";
+            }
 
-                    $this->db->query("DROP TEMPORARY TABLE IF EXISTS soloVenta");
+            venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
 
-                    if($sv == 1){
-                        $qSV = "IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) < 0
-                                        AND NewLoc IS NOT NULL)
-                                        OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) >= 0,
-                                    SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN),
-                                    0) as Monto,
-                                IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) < 0
-                                        AND NewLoc IS NOT NULL)
-                                        OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) >= 0,
-                                    NewLoc,NULL) as LocCount,";
-                    }else{
-                        $qSV = "SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) as Monto, Localizador as LocCount,";
-                    }
+            if($type){
+                $pdvType = "WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial'";
+            }else{
+                $pdvType = "WHEN a.tipo = 1 THEN 'CC OUT'
+                        WHEN a.tipo = 2 THEN 'PDV IN'
+                        ELSE 'PDV Presencial'";
+            }
 
-                    $this->db->select("Fecha, Localizador, gpoInterno")
-                            ->select($qSV, FALSE)
-                            ->from("locs")
-                            ->group_by('Fecha, Localizador');
+            $this->db->select("Fecha, CASE 
+                                WHEN gpoCanalKpi = 'PDV' THEN CASE $pdvType END
+                                WHEN tipoRsva LIKE '%Tag%' THEN 'CC OUT'
+                                WHEN tipoRsva LIKE '%Out' THEN 'CC OUT'
+                                WHEN tipoRsva LIKE '%IN' THEN 
+                                    CASE WHEN cc IS NOT NULL THEN 'Mixcoac'
+                                    WHEN tipoRsva LIKE '%PDV%' THEN 'PDV IN'
+                                    ELSE 'CC IN' END
+                                WHEN tipoRsva LIKE '%Presencial%' THEN 'PDV Presencial'
+                                ELSE 'Online' 
+                            END gpoInterno", FALSE)
+                        ->select($qSV, FALSE)
+                        ->from("base a")
+                        ->join("config_tipoRsva tp", "IF(a.dep IS NULL,
+                                IF(a.asesor = - 1, - 1, 0),
+                                IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+                                    0,
+                                    IF(a.dep = 29 AND cc IS NOT NULL,
+                                        35,
+                                        a.dep))) = tp.dep
+                                AND IF(a.tipo IS NULL OR a.tipo = '',
+                                0,
+                                a.tipo) = tp.tipo", 'left', FALSE)
+                        ->group_by('Fecha, gpoInterno');
 
-                    $soloVenta = $this->db->get_compiled_select();
-                    $this->db->query("CREATE TEMPORARY TABLE soloVenta $soloVenta");
-                    $this->db->query("ALTER TABLE soloVenta
-                                    ADD PRIMARY KEY (Fecha, Localizador)");
-
-                    if($prod){
-
-                        if($this->ventaProducto($start, $end, $t, $td, $mp)){
-                            $this->db->query("DROP TEMPORARY TABLE IF EXISTS soloVentaProd");
-
-                            $this->db->select("Fecha, Localizador, item, itemType, categoryId, isPaq")
-                                    ->select($qSV, FALSE)
-                                    ->from("locsProd")
-                                    ->group_by('Fecha, Localizador, item');
-
-                            $soloVentaProd = $this->db->get_compiled_select();
-                            $this->db->query("CREATE TEMPORARY TABLE soloVentaProd $soloVentaProd");
-                            $this->db->query("ALTER TABLE soloVentaProd
-                                            ADD PRIMARY KEY (Fecha, Localizador, item)");
-
-                            $this->db->query("DROP TEMPORARY TABLE IF EXISTS prod");
-
-                            $this->db->select("a.*, gpoInterno")
-                                    ->select("CASE
-                                                $isPaq
-                                                WHEN itemType = 0 THEN 'None'
-                                                WHEN itemType = 1 THEN 'Hotel'
-                                                WHEN itemType = 2 THEN 'Transfer'
-                                                WHEN itemType = 3 THEN 'Vuelo'
-                                                WHEN itemType = 4 THEN 'Tour'
-                                                WHEN itemType = 5 THEN 'Auto'
-                                                WHEN itemType = 6 THEN 'Paquete'
-                                                WHEN itemType = 7 THEN 'ServiceCharge'
-                                                WHEN itemType = 8 THEN 'Bus'
-                                                WHEN itemType = 11 THEN 'Crucero'
-                                                WHEN itemType = 12 THEN 'Seguro'
-                                                WHEN itemType = 13 THEN 'Circuito'
-                                                WHEN itemType = 14 THEN
-                                                CASE
-                                                    WHEN categoryId = 0 THEN 'None'
-                                                    WHEN categoryId = 1 THEN 'Hotel'
-                                                    WHEN categoryId = 6 THEN 'Transfer'
-                                                    WHEN categoryId = 3 THEN 'Vuelo'
-                                                    WHEN categoryId = 7 THEN 'Tour'
-                                                    WHEN categoryId = 8 THEN 'Auto'
-                                                    WHEN categoryId = 0 THEN 'Paquete'
-                                                    WHEN categoryId = 14 THEN 'ServiceCharge'
-                                                    WHEN categoryId = 9 THEN 'Bus'
-                                                    WHEN categoryId = 2 THEN 'Crucero'
-                                                    WHEN categoryId = 4 THEN 'Seguro'
-                                                    WHEN categoryId = 10 THEN 'Circuito'
-                                                    WHEN categoryId = 5 THEN 'Generico'
-                                                    ELSE 'Otro'
-                                                END
-                                                ELSE 'Otro'
-                                            END as iType", FALSE)
-                                    ->from("soloVentaProd a")
-                                    ->join("soloVenta b", "a.Fecha = b.Fecha AND a.Localizador = b.Localizador", "left")
-                                    ->where("b.Localizador IS NOT ", "NULL", FALSE);
-
-                                    $prodQ = $this->db->get_compiled_select();
-                            
-                            
-                                    if($this->db->query("CREATE TEMPORARY TABLE prod $prodQ")){
-                                    $this->db->select('Fecha, gpoInterno, iType as producto, SUM(Monto) as Monto, COUNT(DISTINCT LocCount) as Locs', FALSE)
-                                            ->from('prod a')
-                                            ->group_by('Fecha, gpoInterno, producto');
-                                    }else{
-                                    errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', array($this->db->error(),$prodQ));
-                                    }
-
-                        }
-
-                    }else{
-                        $this->db->select('Fecha, gpoInterno, SUM(Monto) as Monto, COUNT(DISTINCT LocCount) as Locs', FALSE)
-                            ->from('soloVenta a')
-                            ->group_by('Fecha, gpoInterno');
-                    }
-
-                    // ======================================================================
-                    // START Query for HOURLY
-                    // ======================================================================
-                        if( $h == 1 ){
-                            $this->db->select('b.h')
-                                    ->join('porHora b', 'a.LocCount = b.Localizador', 'left')
-                                    ->group_by('b.h')
-                                    ->order_by('h');
-                        }
-                    // ======================================================================
-                    // END Query for HOURLY
-                    // ======================================================================
-
-                    if($q = $this->db->get()){
-                        $result = $q->result_array();
                         
-                        foreach($result as $index => $info){
-                            if($info['Monto'] == NULL){
-                                $monto = 0;
-                            }else{
-                                $monto = $info['Monto'];
-                            }
 
-                            if( $prod ){
-                                $type = $h ? 'ph' : 'pd';
-                            }else{
-                                $type = $h ? 'h' : 'd';
-                            }
+            if($prod){
+                $this->db->select('servicio as producto', FALSE)
+                        ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
+                        ->group_by('producto');
+            }
 
-                            switch($type){
-                                case 'h':
-                                    $dataRes[$info['Fecha']][$info['h']][$info['gpoInterno']]=floatVal($monto);
-                                    $dataLocs[$info['Fecha']][$info['h']][$info['gpoInterno']]=intVal($info['Locs']);
-                                    break;
-                                case 'd':
-                                    $dataRes[$info['Fecha']][$info['gpoInterno']]=floatVal($monto);
-                                    $dataLocs[$info['Fecha']][$info['gpoInterno']]=intVal($info['Locs']);
-                                    break;
-                                case 'ph':
-                                    $dataRes[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
-                                    $dataLocs[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
-                                    break;
-                                case 'pd':
-                                    $dataRes[$info['Fecha']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
-                                    $dataLocs[$info['Fecha']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
-                                    break;
-                            }
-
-                        }
-
-                        $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
-                        $luR = $luQ->row_array();
-                        $lu = $luR['lu'];
-
-                        okResponse( 'Data obtenida', 'data', array('venta' => $dataRes, 'locs' => $dataLocs), $this, 'lu', $lu );
-                    }else{
-                        errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-                    }
-
-                    return true;
-
-                }else{
-                    errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'Error al generar base de Ventas');
+            // ======================================================================
+            // START Query for HOURLY
+            // ======================================================================
+                if( $h == 1 ){
+                    $this->db->select('b.h')
+                            ->join('porHora b', 'a.LocCount = b.Localizador', 'left')
+                            ->group_by('b.h')
+                            ->order_by('h');
                 }
             // ======================================================================
-            // END Venta Query
+            // END Query for HOURLY
             // ======================================================================
+
+            if($q = $this->db->get()){
+                $result = $q->result_array();
+                
+                foreach($result as $index => $info){
+                    if($info['Monto'] == NULL){
+                        $monto = 0;
+                    }else{
+                        $monto = $info['Monto'];
+                    }
+
+                    if( $prod ){
+                        $type = $h ? 'ph' : 'pd';
+                    }else{
+                        $type = $h ? 'h' : 'd';
+                    }
+
+                    switch($type){
+                        case 'h':
+                            $dataRes[$info['Fecha']][$info['h']][$info['gpoInterno']]=floatVal($monto);
+                            $dataLocs[$info['Fecha']][$info['h']][$info['gpoInterno']]=intVal($info['Locs']);
+                            break;
+                        case 'd':
+                            $dataRes[$info['Fecha']][$info['gpoInterno']]=floatVal($monto);
+                            $dataLocs[$info['Fecha']][$info['gpoInterno']]=intVal($info['Locs']);
+                            break;
+                        case 'ph':
+                            $dataRes[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
+                            $dataLocs[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
+                            break;
+                        case 'pd':
+                            $dataRes[$info['Fecha']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
+                            $dataLocs[$info['Fecha']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
+                            break;
+                    }
+
+                }
+
+                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                $luR = $luQ->row_array();
+                $lu = $luR['lu'];
+
+                okResponse( 'Data obtenida', 'data', array('venta' => $dataRes, 'locs' => $dataLocs), $this, 'lu', $lu );
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+
 
         });
 

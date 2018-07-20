@@ -19,6 +19,10 @@ class Login extends REST_Controller {
 
     $data = $this->put();
 
+    if(!$data['usp'] || trim($data['usp']) == ''){
+      errResponse('Error de autenticacion', REST_Controller::HTTP_BAD_REQUEST, $this, 'msg', "No se recibió ningún password");
+    }
+
     //Username validation
     $user = $this->validateUser( $data['usn'] );
 
