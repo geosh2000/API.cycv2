@@ -5,7 +5,7 @@ class venta_help{
     public static function base($class, $inicio, $fin, $prod = false, $pais = null, $mp = true, $outlet = false, $ag = false){
 
       
-        $class->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal, c.dep, vacante, puesto, cc")
+        $class->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal, c.dep, vacante, puesto, cc, tipo")
             ->select("IF(dtCreated BETWEEN a.Fecha AND ADDDATE(a.Fecha,1), Localizador, null) as NewLoc", FALSE)
             ->select('ml.asesor')
             ->from('t_hoteles_test a')
@@ -53,7 +53,7 @@ class venta_help{
 
     $class->db->query("DROP TEMPORARY TABLE IF EXISTS locsProdF");
 
-    $class->db->select('a.*')
+    $class->db->select('a.*, tipo')
             ->select("  CASE 
                         WHEN ml.asesor = 0 AND 3 != ".$params[$skill]['skin']." THEN 0
                         WHEN tipoRsva LIKE '%Tag%' THEN 50 

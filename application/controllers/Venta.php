@@ -168,13 +168,15 @@ class Venta extends REST_Controller {
 
             venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
 
-            if($type){
+            if($t){
                 $pdvType = "WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial'";
             }else{
                 $pdvType = "WHEN a.tipo = 1 THEN 'CC OUT'
                         WHEN a.tipo = 2 THEN 'PDV IN'
                         ELSE 'PDV Presencial'";
             }
+
+            
 
             $this->db->select("Fecha, CASE 
                                 WHEN gpoCanalKpi = 'PDV' THEN CASE $pdvType END
