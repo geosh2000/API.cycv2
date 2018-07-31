@@ -24,11 +24,13 @@ class venta_help{
         }
 
         if( $pais != null ){ $class->db->where_in('pais', $pais);  }
+        if( $pais == null && $mp ){ $class->db->where('pais !=', 'CO');  }
         if( !$outlet ){ $class->db->where( array( 'gpoCanalKPI !=' => 'Outlet' ) ); }
         if( !$ag ){ $class->db->where( array( 'gpoCanalKPI !=' => 'Agencias' ) ); }
             
 
         $tableLocs = $class->db->get_compiled_select();
+        $class->db->query("DROP TEMPORARY TABLE IF EXISTS base");
 
         if( $class->db->query("CREATE TEMPORARY TABLE base $tableLocs") ){
             return $tableLocs;
@@ -53,7 +55,7 @@ class venta_help{
 
     $class->db->query("DROP TEMPORARY TABLE IF EXISTS locsProdF");
 
-    $class->db->select('a.*, tipo')
+    $class->db->select('a.*, ml.tipo')
             ->select("  CASE 
                         WHEN ml.asesor = 0 AND 3 != ".$params[$skill]['skin']." THEN 0
                         WHEN tipoRsva LIKE '%Tag%' THEN 50 
@@ -134,7 +136,7 @@ class venta_help{
                         IF(dp.dep = 29 AND cc IS NOT NULL,
                             35,
                             dp.dep))) = tp.dep
-                    AND IF(ml.tipo IS NULL OR a.tipo = '',
+                    AND IF(ml.tipo IS NULL OR ml.tipo = '',
                     0,
                     ml.tipo) = tp.tipo", 'left', FALSE)
             ->where($fecha, $fechaVar, FALSE)

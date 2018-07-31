@@ -591,4 +591,106 @@ class VentaMonitor extends REST_Controller {
         
     }
 
+    public function indexMonitor_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+            
+            $skill = $this->uri->segment(3);
+
+            $query = "SELECT 
+                        a.Fecha,
+                        a.asesor,
+                        NOMBREASESOR(a.asesor, 2) AS Nombre,
+                        NOMBREASESOR(a.supervisor, 2) AS Supervisor,
+                        MontoSV,
+                        IF(a.dep = 35, LocsIn, LocsNotIn) AS Locs,
+                        IF(a.dep = 35,
+                            COALESCE(callsIn, 0),
+                            COALESCE(callsOut, 0)) AS calls,
+                        IF(COALESCE(callsIn, 0) = 0,
+                            0,
+                            LocsIn / callsIn) * 100 AS FC,
+                        ROUND(IF(a.dep = 35,
+                                    COALESCE(AHTIn, 0),
+                                    COALESCE(AHTOut, 0)),
+                                2) AS AHT,
+                        ROUND(horas, 2) AS horas,
+                        ROUND(Meta_Diaria, 2) AS Meta_Diaria,
+                        ROUND(Meta_Diaria / (8 * 60), 2) AS Meta_minuto,
+                        ROUND(IF(COALESCE(horas, 0) = 0,
+                                    0,
+                                    IF(a.dep = 35, LocsIn, LocsNotIn) / horas),
+                                2) AS LocsIndex,
+                        ROUND(IF(COALESCE(IF(a.dep = 35, AHTIn, AHTOut), 0) = 0,
+                                    0,
+                                    550 / IF(a.dep = 35, AHTIn, AHTOut)) * 2,
+                                2) AS AhtIndex,
+                        ROUND(IF(COALESCE(IF(a.dep = 35, callsIn, callsOut), 0) = 0,
+                                    0,
+                                    IF(a.dep = 35, LocsIn, LocsNotIn) / IF(a.dep = 35, callsIn, callsOut)) / .15 * 3,
+                                2) AS FcIndex,
+                        ROUND(IF(COALESCE(((Meta_Diaria / (8 * 60)) * horas * 60),
+                                            0) = 0,
+                                    0,
+                                    MontoSV / ((Meta_Diaria / (8 * 60)) * horas * 60)) * 4,
+                                2) AS MontoIndex,
+                        ROUND(IF(COALESCE(horas, 0) = 0,
+                                    0,
+                                    IF(a.dep = 35, LocsIn, LocsNotIn) / horas) + IF(COALESCE(IF(a.dep = 35, AHTIn, AHTOut), 0) = 0,
+                                    0,
+                                    550 / IF(a.dep = 35, AHTIn, AHTOut)) * 2 + IF(COALESCE(IF(a.dep = 35, callsIn, callsOut), 0) = 0,
+                                    0,
+                                    IF(a.dep = 35, LocsIn, LocsNotIn) / IF(a.dep = 35, callsIn, callsOut)) / .15 * 3 + IF(COALESCE(((Meta_Diaria / (8 * 60)) * horas * 60),
+                                            0) = 0,
+                                    0,
+                                    MontoSV / ((Meta_Diaria / (8 * 60)) * horas * 60)) * 4,
+                                2) AS TotalIndex
+                    FROM
+                        graf_dailySale a
+                            LEFT JOIN
+                        (SELECT 
+                            Fecha,
+                                asesor,
+                                TIME_TO_SEC(TIMEDIFF(NOW(), COALESCE(CHECKLOG(Fecha, asesor, 'in'), NOW()))) / 60 / 60 AS horas
+                        FROM
+                            asesores_programacion
+                        WHERE
+                            Fecha = CURDATE()) b ON a.asesor = b.asesor
+                            AND a.Fecha = b.Fecha
+                            LEFT JOIN
+                        metas c ON a.dep = c.skill AND mes = MONTH(a.Fecha)
+                            AND anio = YEAR(a.Fecha)
+                            LEFT JOIN
+                        dep_asesores d ON a.asesor = d.asesor
+                            AND a.Fecha = d.Fecha
+                    WHERE
+                        a.Fecha = CURDATE()
+                            AND a.dep = $skill
+                            AND puesto IN (1 , 2)";
+            
+            if( $q = $this->db->query($query) ){
+
+                $data = $q->result_array();
+
+                foreach($data as $item => $info){
+                    foreach($info as $title => $datos){
+                        if( $title != 'Nombre' AND $title != 'Fecha' AND $title != 'Supervisor' ){
+                            $data[$item][$title]=floatval($datos);
+                        }
+                    }
+                }
+
+                okResponse( "Información correctamente obtenida", 'data', $data, $this );
+
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+
+        return true;
+
+        });
+
+    }
+
 }

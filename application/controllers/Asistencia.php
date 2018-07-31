@@ -230,12 +230,12 @@ class Asistencia extends REST_Controller {
 
         $params = $this->put();
 
-        $dep    = $params['dep']; 
-        $inicio = $params['inicio']; 
-        $fin    = $params['fin'];
-        $asesor = $params['asesor']; 
-        $noSup  = $params['noSup']; 
-        $order  = $params['order']; 
+        $dep    = isset($params['dep']) ? $params['dep'] : null; 
+        $inicio = isset($params['inicio']) ? $params['inicio'] : null; 
+        $fin    = isset($params['fin']) ? $params['fin'] : null;
+        $asesor = isset($params['asesor']) ? $params['asesor'] : null; 
+        $noSup  = isset($params['noSup']) ? $params['noSup'] : null; 
+        $order  = isset($params['order']) ? $params['order'] : null; 
 
         $noSupFlag = isset($noSup) && $noSup == 1 ? true : false;
         $orderFlag = isset($order) && $order == 1 ? true : false;
@@ -809,7 +809,7 @@ public function pyaV2_get(){
               ->where("a.Fecha BETWEEN @inicio AND @fin
                         AND vacante IS NOT NULL
                         AND dep = @skill
-
+                        AND puesto != 11
                         AND showcal = 1", NULL, FALSE);
 
 
@@ -828,11 +828,11 @@ public function pyaV2_get(){
                   ->join("asesores_ausentismos b", "a.Fecha = b.Fecha", "left")
                   ->join("dep_asesores c", "b.asesor = c.asesor
                                             AND b.Fecha = c.Fecha
-                                            AND a.Departamento = c.dep", "left")
+                                            AND a.Departamento = c.dep AND c.vacante IS NOT NULL", "left")
                   ->join("hc_codigos_Puesto d", "c.hc_puesto = d.id", "left")
                   ->join("config_tiposAusentismos e", "b.ausentismo = e.id", "left")
                   ->where("a.Departamento = @skill AND a.Fecha BETWEEN @inicio AND @fin", NULL, FALSE)
-                  ->where("(showcal = 1 OR showcal IS NULL) ", NULL, FALSE)
+                  ->where("(showcal = 1 OR showcal IS NULL)", NULL, FALSE)
                   ->group_by("a.Fecha");
 
         if( $q = $this->db->get() ){

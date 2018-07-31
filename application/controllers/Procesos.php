@@ -1089,137 +1089,137 @@ class Procesos extends REST_Controller {
     
     public function genGrafCalls_get(){
         
-        $inicio = $this->uri->segment(3);
-        $fin = $this->uri->segment(4);
+        // $inicio = $this->uri->segment(3);
+        // $fin = $this->uri->segment(4);
         
-        if(isset($inicio)){
-            $this->db->query("SET @inicio = CAST('$inicio' as DATE)");
-            if(isset($fin)){
-                $this->db->query("SET @fin = CAST('$fin' as DATE)");
-            }else{
-                $this->db->query("SET @fin = CAST('$inicio' as DATE)");
-            }
-        }else{
-            $this->db->query("SET @inicio = CAST(CONCAT(YEAR(CURDATE()),'-',MONTH(CURDATE()),'-01') as DATE)");
-            $this->db->query("SET @fin = CURDATE()");
-        }
+        // if(isset($inicio)){
+        //     $this->db->query("SET @inicio = CAST('$inicio' as DATE)");
+        //     if(isset($fin)){
+        //         $this->db->query("SET @fin = CAST('$fin' as DATE)");
+        //     }else{
+        //         $this->db->query("SET @fin = CAST('$inicio' as DATE)");
+        //     }
+        // }else{
+        //     $this->db->query("SET @inicio = CAST(CONCAT(YEAR(CURDATE()),'-',MONTH(CURDATE()),'-01') as DATE)");
+        //     $this->db->query("SET @fin = CURDATE()");
+        // }
         
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS asesoresDS");
-        $this->db->query("CREATE TEMPORARY TABLE asesoresDS SELECT 
-            Fecha as FechaDS, asesor as asesorDS, dep as depDS
-        FROM
-            dep_asesores
-        WHERE
-            Fecha BETWEEN @inicio AND @fin
-                AND vacante IS NOT NULL");
-        $this->db->query("ALTER TABLE asesoresDS ADD PRIMARY KEY (FechaDS, asesorDS)");
+        // $this->db->query("DROP TEMPORARY TABLE IF EXISTS asesoresDS");
+        // $this->db->query("CREATE TEMPORARY TABLE asesoresDS SELECT 
+        //     Fecha as FechaDS, asesor as asesorDS, dep as depDS
+        // FROM
+        //     dep_asesores
+        // WHERE
+        //     Fecha BETWEEN @inicio AND @fin
+        //         AND vacante IS NOT NULL");
+        // $this->db->query("ALTER TABLE asesoresDS ADD PRIMARY KEY (FechaDS, asesorDS)");
 
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
+        // $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
         
-        $this->db->select("AsteriskId as id, Fecha, Hora, Llamante, a.Cola, Espera, Desconexion, asesor, DNIS, Duracion_Real, Answered, Skill, direction, Last_Update")
-            ->from('t_Answered_Calls a')
-            ->join('Cola_Skill b', 'a.Cola = b.Cola AND b.active = 1', 'left')
-            ->where("a.Fecha BETWEEN @inicio AND @fin AND a.asesor >= 0", "", FALSE)
-            ->having("Skill IS NOT NULL", "", FALSE);
+        // $this->db->select("AsteriskId as id, Fecha, Hora, Llamante, a.Cola, Espera, Desconexion, asesor, DNIS, Duracion_Real, Answered, Skill, direction, Last_Update")
+        //     ->from('t_Answered_Calls a')
+        //     ->join('Cola_Skill b', 'a.Cola = b.Cola AND b.active = 1', 'left')
+        //     ->where("a.Fecha BETWEEN @inicio AND @fin AND a.asesor >= 0", "", FALSE)
+        //     ->having("Skill IS NOT NULL", "", FALSE);
         
-        $calls = $this->db->get_compiled_select();
-        $this->db->query("CREATE TEMPORARY TABLE calls $calls");
-        $this->db->query("ALTER TABLE calls ADD PRIMARY KEY (id(20))");
+        // $calls = $this->db->get_compiled_select();
+        // $this->db->query("CREATE TEMPORARY TABLE calls $calls");
+        // $this->db->query("ALTER TABLE calls ADD PRIMARY KEY (id(20))");
         
-        $this->db->select("callid as id,
-                            CAST(tstEnter AS DATE) AS Fecha,
-                            CAST(tstEnter AS TIME) AS Hora,
-                            `from` AS Llamante,
-                            Cola,
-                            SEC_TO_TIME(waitLen) AS Espera,
-                            IF(callLen IS NULL,
-                                'Abandono',
-                                'Answered') AS Desconexion,
-                            GETIDASESOR(descr_agente, 2) AS asesor,
-                            CONCAT(IF(SUBSTRING(dnis, 1, 1) = '0',
-                                        '\'',
-                                        ''),
-                                    dnis) AS DNIS,
-                            SEC_TO_TIME(callLen) AS dur,
-                            IF(COALESCE(callLen,0)=0, 0, 1) AS Answered,
-                            Skill, direction,
-                            a.Last_Update", FALSE)
-            ->from('ccexporter.callsDetails a')
-            ->join('Cola_Skill b', 'a.queue = b.queue AND b.active = 1', 'left')
-            ->join('ccexporter.agentDetails c ', 'IF(COALESCE(callLen,0)=0, a.agentOut, a.agent) = nome_agente', 'left', FALSE)
-            ->where("tstEnter >= CURDATE()", "", FALSE)
-            ->having("Skill IS NOT NULL", "", FALSE);
+        // $this->db->select("callid as id,
+        //                     CAST(tstEnter AS DATE) AS Fecha,
+        //                     CAST(tstEnter AS TIME) AS Hora,
+        //                     `from` AS Llamante,
+        //                     Cola,
+        //                     SEC_TO_TIME(waitLen) AS Espera,
+        //                     IF(callLen IS NULL,
+        //                         'Abandono',
+        //                         'Answered') AS Desconexion,
+        //                     GETIDASESOR(descr_agente, 2) AS asesor,
+        //                     CONCAT(IF(SUBSTRING(dnis, 1, 1) = '0',
+        //                                 '\'',
+        //                                 ''),
+        //                             dnis) AS DNIS,
+        //                     SEC_TO_TIME(callLen) AS dur,
+        //                     IF(COALESCE(callLen,0)=0, 0, 1) AS Answered,
+        //                     Skill, direction,
+        //                     a.Last_Update", FALSE)
+        //     ->from('ccexporter.callsDetails a')
+        //     ->join('Cola_Skill b', 'a.queue = b.queue AND b.active = 1', 'left')
+        //     ->join('ccexporter.agentDetails c ', 'IF(COALESCE(callLen,0)=0, a.agentOut, a.agent) = nome_agente', 'left', FALSE)
+        //     ->where("tstEnter >= CURDATE()", "", FALSE)
+        //     ->having("Skill IS NOT NULL", "", FALSE);
         
-        $callsTD = $this->db->get_compiled_select();
+        // $callsTD = $this->db->get_compiled_select();
         
-        $this->db->query("INSERT INTO calls SELECT * FROM ($callsTD) a ON DUPLICATE KEY UPDATE Duracion_real=a.dur, Answered=a.Answered, Espera=a.Espera, asesor=a.asesor");
+        // $this->db->query("INSERT INTO calls SELECT * FROM ($callsTD) a ON DUPLICATE KEY UPDATE Duracion_real=a.dur, Answered=a.Answered, Espera=a.Espera, asesor=a.asesor");
         
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumCalls");
+        // $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumCalls");
         
-        $this->db->select("Fecha,
-                            asesor,
-                            Skill,
-                            COUNT(IF(NOT (Desconexion != 'Transferida'
-                                    AND TIME_TO_SEC(Duracion_Real) < 120) AND direction = 1,
-                                id,
-                                NULL)) AS callsIn,
-                            SUM(IF(direction = 1 AND Answered=1, COALESCE(TIME_TO_SEC(Duracion_Real),0), 0)) AS TTIn,
-                            COUNT(IF(Answered=1 AND direction = 2,
-                                id,
-                                NULL)) AS callsOut,
-                            SUM(IF(direction = 2 AND Answered=1, COALESCE(TIME_TO_SEC(Duracion_Real),0), 0)) AS TTOut,
-                            COUNT(IF(Answered=0 AND direction = 2,
-                                id,
-                                NULL)) AS intentosOut", FALSE)
-            ->from('calls')
-            ->group_by(array("Fecha" , "asesor" , "Skill"))
-            ->having("asesor IS NOT NULL", "", FALSE);
+        // $this->db->select("Fecha,
+        //                     asesor,
+        //                     Skill,
+        //                     COUNT(IF(NOT (Desconexion != 'Transferida'
+        //                             AND TIME_TO_SEC(Duracion_Real) < 120) AND direction = 1,
+        //                         id,
+        //                         NULL)) AS callsIn,
+        //                     SUM(IF(direction = 1 AND Answered=1, COALESCE(TIME_TO_SEC(Duracion_Real),0), 0)) AS TTIn,
+        //                     COUNT(IF(Answered=1 AND direction = 2,
+        //                         id,
+        //                         NULL)) AS callsOut,
+        //                     SUM(IF(direction = 2 AND Answered=1, COALESCE(TIME_TO_SEC(Duracion_Real),0), 0)) AS TTOut,
+        //                     COUNT(IF(Answered=0 AND direction = 2,
+        //                         id,
+        //                         NULL)) AS intentosOut", FALSE)
+        //     ->from('calls')
+        //     ->group_by(array("Fecha" , "asesor" , "Skill"))
+        //     ->having("asesor IS NOT NULL", "", FALSE);
         
         
         
-        $sumCalls = $this->db->get_compiled_select();
+        // $sumCalls = $this->db->get_compiled_select();
         
-        $this->db->query("CREATE TEMPORARY TABLE sumCalls $sumCalls");
-        $this->db->query("ALTER TABLE sumCalls ADD PRIMARY KEY (Fecha, asesor(20), Skill)");
+        // $this->db->query("CREATE TEMPORARY TABLE sumCalls $sumCalls");
+        // $this->db->query("ALTER TABLE sumCalls ADD PRIMARY KEY (Fecha, asesor(20), Skill)");
         
-        $this->db->query("DROP TEMPORARY TABLE IF EXISTS final");
+        // $this->db->query("DROP TEMPORARY TABLE IF EXISTS final");
         
-        $this->db->select("FechaDS as Fecha, asesorDS as asesor, 
-                        Skill, 
-                        COALESCE(callsIn,0) as callsIn, 
-                        COALESCE(TTIn,0) as TTIn, 
-                        IF(COALESCE(callsIn,0) = 0, 0, COALESCE(TTIn,0)/COALESCE(callsIn,0)) as AHTIn, 
-                        COALESCE(callsOut,0) as callsOut, 
-                        COALESCE(TTOut,0) as TTOut, 
-                        IF(COALESCE(callsOut,0) = 0, 0, COALESCE(TTOut,0)/COALESCE(callsOut,0)) as AHTOut,
-                        COALESCE(intentosOut,0) as intentosOut", FALSE)
-            ->from('asesoresDS a')
-            ->join('sumCalls b', 'FechaDS=Fecha AND asesorDS=asesor', 'left');
+        // $this->db->select("FechaDS as Fecha, asesorDS as asesor, 
+        //                 Skill, 
+        //                 COALESCE(callsIn,0) as callsIn, 
+        //                 COALESCE(TTIn,0) as TTIn, 
+        //                 IF(COALESCE(callsIn,0) = 0, 0, COALESCE(TTIn,0)/COALESCE(callsIn,0)) as AHTIn, 
+        //                 COALESCE(callsOut,0) as callsOut, 
+        //                 COALESCE(TTOut,0) as TTOut, 
+        //                 IF(COALESCE(callsOut,0) = 0, 0, COALESCE(TTOut,0)/COALESCE(callsOut,0)) as AHTOut,
+        //                 COALESCE(intentosOut,0) as intentosOut", FALSE)
+        //     ->from('asesoresDS a')
+        //     ->join('sumCalls b', 'FechaDS=Fecha AND asesorDS=asesor', 'left');
         
-        $final = $this->db->get_compiled_select();
-        $this->db->query("CREATE TEMPORARY TABLE final $final");
-        $this->db->query("ALTER TABLE final ADD PRIMARY KEY (Fecha, asesor, Skill)");
+        // $final = $this->db->get_compiled_select();
+        // $this->db->query("CREATE TEMPORARY TABLE final $final");
+        // $this->db->query("ALTER TABLE final ADD PRIMARY KEY (Fecha, asesor, Skill)");
 
         
-        if( $this->db->query("UPDATE graf_dailySale a
-                                    LEFT JOIN
-                                final b ON a.Fecha = b.Fecha
-                                    AND a.asesor = b.asesor
-                                    AND IF(a.dep IN (35, 29), 35, a.dep) = b.Skill 
-                            SET 
-                                a.callsIn = b.callsIn,
-                                a.TTIn = b.TTin,
-                                a.AHTIn = b.AHTIn,
-                                a.callsOut = b.callsOut,
-                                a.TTOut = b.TTOut,
-                                a.AHTOut = b.AHTOut,
-                                a.intentosOut = b.intentosOut
-                            WHERE
-                                a.Fecha BETWEEN @inicio AND @fin") ){
-           okResponse( 'Información Actualizada', 'data', TRUE, $this);
-        }else{
-           errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-        }
+        // if( $this->db->query("UPDATE graf_dailySale a
+        //                             LEFT JOIN
+        //                         final b ON a.Fecha = b.Fecha
+        //                             AND a.asesor = b.asesor
+        //                             AND IF(a.dep IN (35, 29), 35, a.dep) = b.Skill 
+        //                     SET 
+        //                         a.callsIn = b.callsIn,
+        //                         a.TTIn = b.TTin,
+        //                         a.AHTIn = b.AHTIn,
+        //                         a.callsOut = b.callsOut,
+        //                         a.TTOut = b.TTOut,
+        //                         a.AHTOut = b.AHTOut,
+        //                         a.intentosOut = b.intentosOut
+        //                     WHERE
+        //                         a.Fecha BETWEEN @inicio AND @fin") ){
+        //    okResponse( 'Información Actualizada', 'data', TRUE, $this);
+        // }else{
+        //    errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        // }
         
     }
     

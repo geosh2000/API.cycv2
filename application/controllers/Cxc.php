@@ -597,4 +597,326 @@ class Cxc extends REST_Controller {
 
   }
 
+  public function transactions_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $localizador = $this->uri->segment(3);
+      $rev = $this->uri->segment(4);
+
+      if( $rev != 1 ){
+        $this->db->select('a.id, a.localizador, NOMBREASESOR(asesor,1) as asesor, SUM(montoFiscal) as Monto, cxcIdLink, a.status')
+          ->from('asesores_cxc a')
+          ->join('cxc_transactions b', 'a.id=cxcIdLink', 'left')
+          ->where(array('a.localizador' => $localizador))
+          ->group_by(array('a.id'))
+          ->order_by('fecha_cxc');
+      }else{
+        $this->db->select('a.id, a.Localizador, aplicablePara, montoFiscal, cxcIdLink, COALESCE(status,0) as status')
+          ->from('cxc_transactions a')
+          ->join('asesores_cxc b', 'b.id=cxcIdLink', 'left')
+          ->where(array('a.localizador' => $localizador))
+          ->order_by('dtCreated');
+      }
+
+      
+      if($q = $this->db->get()){
+
+            okResponse( 'Transacciones obtenidas', 'data', $q->result_array(), $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function search_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS cxcAmount");
+      $this->db->query("CREATE TEMPORARY TABLE cxcAmount
+                        SELECT cxcIdLink, SUM(montoFiscal) as monto FROM cxc_transactions WHERE cxcIdLink IS NOT NULL GROUP BY cxcIdLink");
+      $this->db->query("ALTER TABLE cxcAmount ADD PRIMARY KEY (cxcIdLink)");
+
+      if( $data['noTx'] == true ){
+        $this->db->query("DROP TEMPORARY TABLE IF EXISTS cxcRegs");
+        $this->db->query("CREATE TEMPORARY TABLE cxcRegs
+                          SELECT Localizador, COUNT(*) as regs FROM cxc_transactions GROUP BY Localizador");
+        $this->db->query("ALTER TABLE cxcRegs ADD PRIMARY KEY (Localizador)");
+
+        $this->db->join('asesores_cxc b', 'a.cxcIdLink=b.id', 'right')
+              ->join('cxcRegs c', 'b.Localizador=c.Localizador', 'left')
+              ->where('a.id IS NULL', '', FALSE);
+      }else{
+
+          $this->db->query("DROP TEMPORARY TABLE IF EXISTS cxcRegs");
+          $this->db->query("CREATE TEMPORARY TABLE cxcRegs
+                            SELECT Localizador, COUNT(*) as regs FROM asesores_cxc GROUP BY Localizador");
+          $this->db->query("ALTER TABLE cxcRegs ADD PRIMARY KEY (Localizador)");
+  
+          $this->db->join('asesores_cxc b', 'a.cxcIdLink=b.id', 'left')
+                ->join('cxcRegs c', 'a.Localizador=c.Localizador', 'left');
+      }
+
+      $this->db->select('a.id, COALESCE(a.Localizador, b.Localizador) as Localizador, dtCreated, montoFiscal, a.monto, currency, aplicablePara, 
+                        autorizadoPor, cobradoPor, b.id as cxcIdLink, asesor as asesorID, NOMBREASESOR(asesor,1) as asesor, d.monto as totalCxc, 
+                        status, tipo, firmado, comments, NOMBREASESOR(created_by,1) created_by, 
+                        NOMBREASESOR(updated_by,1) updated_by, regs as posibleLinks')
+        ->from('cxc_transactions a')
+        ->join('cxcAmount d', 'b.id=d.cxcIdLink', 'left')
+        ->order_by('dtCreated');
+
+      if( $data['onlyReg'] == true ){
+        $this->db->where('regs >',0);
+      }
+
+      switch( $data['type'] ){
+        case 'Fecha':
+          if( $data['noTx'] == true ){
+            $this->db->where("fecha_cxc BETWEEN '".$data['search']['Fecha']['inicio']."' AND '".$data['search']['Fecha']['fin']."'", NULL, FALSE);
+          }else{
+            $this->db->where("dtCreated BETWEEN '".$data['search']['Fecha']['inicio']."' AND ADDDATE('".$data['search']['Fecha']['fin']."',1)", NULL, FALSE);
+          }
+          break;
+        case 'Localizador':
+          $this->db->where("a.Localizador", $data['search']['Localizador'], FALSE);
+          break;
+        case 'asesor':
+          $this->db->where("b.asesor", $data['search']['asesor'], FALSE);
+          break;
+      }
+
+      if( $data['resumed'] == true ){
+        $this->db->group_by('cxcIdLink')->having('cxcIdLink IS NOT ', 'NULL', FALSE);
+      }
+
+      if($q = $this->db->get()){
+
+        $data = $q->result_array();
+
+        foreach($data as $index => $info){
+          $url = $_SERVER['DOCUMENT_ROOT']."/img/cxc/".$info['cxcIdLink'].".jpg";
+
+          if( file_exists( $url ) ){
+            $data[$index]['Formato'] = 1;
+          }else{
+            $data[$index]['Formato'] = 0;
+          }
+        }
+
+            okResponse( 'CxC obtenidos', 'data', $data, $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function searchApply_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $dep = $this->uri->segment(3);
+
+      $this->db->select('a.id, a.id as cxcIdLink, fecha_cxc as Fecha, a.Localizador, SUM(montoFiscal) as totalCxc, 
+                          a.asesor as asesorID, NOMBREASESOR(a.asesor,1) as asesor, NOMBREDEP(dep) as Departamento,
+                          status, tipo, firmado, comments, NOMBREASESOR(created_by,1) created_by, 
+                        NOMBREASESOR(updated_by,1) updated_by')
+        ->from('asesores_cxc a')
+        ->join('cxc_transactions b', 'a.id=b.cxcIdLink', 'left')
+        ->join('dep_asesores c', 'a.asesor=c.asesor AND c.Fecha=CURDATE()', 'left')
+        ->where(array('a.status' => 1))
+        ->group_by('a.id')
+        ->having('totalCxc >', 0)
+        ->order_by('asesor');
+
+      if( isset($dep) ){
+        if( $dep != 0 ){
+          $this->db->where('dep', $dep);
+        }else{
+          $this->db->where('dep != ', 29);
+        }
+      }else{
+        $this->db->where('dep != ', 29);
+      }
+
+      if($q = $this->db->get()){
+
+        $data = $q->result_array();
+
+        foreach($data as $index => $info){
+          $url = $_SERVER['DOCUMENT_ROOT']."/img/cxc/".$info['id'].".jpg";
+
+          if( file_exists( $url ) ){
+            $data[$index]['Formato'] = 1;
+          }else{
+            $data[$index]['Formato'] = 0;
+          }
+        }
+
+            okResponse( 'CxC obtenidos', 'data', $data, $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function link_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $id_tx = $this->uri->segment(3);
+      $id_cxc = $this->uri->segment(4);
+
+      $this->db->where('id', $id_tx)
+        ->set('cxcIdLink', $id_cxc);
+
+      if($this->db->update('cxc_transactions')){
+        $this->saveHistory($id_tx, $id_cxc, true, $_GET['usid']);
+        okResponse( 'CxC ligado', 'data', true, $this );
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function unlink_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $id_tx = $this->uri->segment(3);
+      $id_cxc = $this->uri->segment(4);
+
+      $this->db->where('id', $id_tx)
+        ->set('cxcIdLink', null);
+
+      if($this->db->update('cxc_transactions')){
+        $this->saveHistory($id_tx, $id_cxc, false, $_GET['usid']);
+        okResponse( 'CxC ligado', 'data', true, $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function new_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $this->db->set($data)
+        ->set('created_by', $_GET['usid'])
+        ->set('monto', 0);
+
+      if($this->db->insert('asesores_cxc')){
+
+            okResponse( 'CxC Cargado', 'data', $this->db->insert_id(), $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+
+  }
+
+  public function editReg_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $this->db->set($data['set'])
+        ->set('updated_by', $_GET['usid'])
+        ->where($data['where']);
+
+      if($this->db->update('asesores_cxc')){
+
+            okResponse( 'CxC Actualizado', 'data', true, $this );
+
+      }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    $this->response($result);
+  }
+
+  public function apply_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+      $summary = array( 'success' => array(), 'error' => array() );
+
+      foreach($data as $index => $item){
+        $this->db->set($item)
+          ->set('updater', $_GET['usid']);
+
+          if( $this->db->insert('cxc_payTable') ){
+            array_push( $summary['success'], $item['consecutivo'] );
+          }else{
+            array_push( $summary['error'], array( 'cons' => $item['consecutivo'], 'err' => $this->db->error()) );
+          }
+          
+      }
+
+      if( count($summary['error']) == 0 ){
+            $this->db->set( array('status' => 2, 'updated_by' => $_GET['usid']) )
+                  ->where('id', $data[0]['cxcId'])
+                  ->update('asesores_cxc');
+
+            okResponse( 'Cxc Aplicado', 'data', true, $this );
+
+      }else{
+            $this->db->where( 'cxcId', $data[0]['cxcId'] )->delete('cxc_payTable');
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $summary['error'][0]);
+      }
+
+    });
+
+    $this->response($result);
+  }
+
+  private function saveHistory($tx, $cxc, $link, $asesor){
+
+    $data = array(
+      'transactionId' => $tx,
+      'cxcId' => $cxc,
+      'link' => $link == true ? 1 : 0,
+      'asesor' => $asesor
+    );
+
+    $this->db->set($data)->insert('cxc_linkHistory');
+  }
+
 }

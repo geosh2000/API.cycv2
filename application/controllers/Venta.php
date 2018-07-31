@@ -18,41 +18,61 @@ class Venta extends REST_Controller {
     }
 
      
-    private function locs( $soloVenta, $td = FALSE ){
-        
-        $this->db->select("Fecha, Localizador, marca, pais, gpoCanalKpi")
-                ->select("SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) as Total", FALSE)
-                ->select("IF(SUM(VentaMXN)>0,Localizador,NULL) as NewLoc", FALSE)
-                ->select("IF(SUM(VentaMXN)>=0 AND SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN)>0,Localizador,NULL) as DaySum", FALSE)
-                
-                ->join("chanGroups b", "a.chanId = b.id", "left")
-                ->where("marca", " @marca", FALSE)
-                ->where("pais", " @pais", FALSE)
-                ->where("gpoCanalKpi != ", "Agencias")
-                ->group_by(array("Fecha", "Localizador"));
+    private function locs( $soloVenta, $td, $inicio, $fin, $mp, $pais ){
+        // $data['pais'] == 'MX' ? null : [$data['pais']]
+        $tbl = $td ? 'baseTD' : 'baseYD';
+
+        if( !$td ){
+            $dates = $this->db->query("SELECT ADDDATE('$inicio',-364) as inicio, ADDDATE('$fin', -364) as fin");
+            $dt = $dates->row_array();
+            $inicio = $dt['inicio'];
+            $fin = $dt['fin'];
+        }
+
+        venta_help::base($this, $inicio, $fin, false, $pais, $mp, true, false);
+
+        $this->db->select("Fecha, tipoRsva, 
+                            CASE 
+                                WHEN gpoCanalKpi = 'PT.com' THEN IF(gpoTipoRsva = 'Presencial','In',gpoTipoRsva)
+                                WHEN gpoCanalKpi = 'Outlet' THEN 'Outlet'
+                                ELSE gpoTipoRsva
+                            END as gpoTipoRsvaOk")
+                ->select("CAST(CONCAT(HOUR(a.Hora), 
+                            CASE
+                                WHEN MINUTE(a.Hora) >= 0  AND MINUTE(a.Hora)< 15 THEN ':00:00'
+                                WHEN MINUTE(a.Hora) >= 15 AND MINUTE(a.Hora)< 30 THEN ':15:00'
+                                WHEN MINUTE(a.Hora) >= 30 AND MINUTE(a.Hora)< 45 THEN ':30:00'
+                                ELSE ':45:00'
+                            END) as TIME) AS H", FALSE)
+                ->select("Hora")
+                ->from('base a')
+                ->join("config_tipoRsva d", "IF(a.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, a.dep)) = d.dep
+                                            AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo", "left", FALSE)
+                ->group_by(array("a.Fecha", "H", "gpoTipoRsvaOk"))
+                ->order_by("a.Fecha", "H");
         
         if( $soloVenta == 1 ){
-                $this->db->having("DaySum IS NOT ", "NULL", FALSE);
-        }
-        
-            if( $td ){
-            $this->db->from("d_Locs a")
-                ->where("a.Fecha", " CURDATE()", FALSE);
+            $this->db->select("SUM(IF(newLoc IS NOT NULL OR VentaMXN+OtrosIngresosMXN+EgresosMXN > 0,VentaMXN+OtrosIngresosMXN+EgresosMXN,0)) as Monto", FALSE);
         }else{
-            $this->db->from("t_Locs a")
-                ->where("(a.Fecha BETWEEN @inicio AND @fin OR
-                        a.Fecha BETWEEN ADDDATE(@inicio,-364) AND ADDDATE(@fin, -364)) ", " ", FALSE);
-            }
+            $this->db->select("SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto", FALSE);
+        }
+
+        $query = $this->db->get_compiled_select();
+
+        $this->db->query("DROP TEMPORARY TABLE IF EXISTS $tbl");
+        $this->db->query("CREATE TEMPORARY TABLE $tbl $query");
+        $this->db->query("ALTER TABLE $tbl ADD PRIMARY KEY(Fecha, H, gpoTipoRsvaOk)");
+        
     }
     
     private function xHora( $td = FALSE ){
         
         $this->db->select("a.Fecha, tipoRsva, 
-        CASE 
-            WHEN gpoCanalKpi = 'PT.com' THEN IF(gpoTipoRsva = 'Presencial','In',gpoTipoRsva)
-            WHEN gpoCanalKpi = 'Outlet' THEN 'Outlet'
-            ELSE gpoTipoRsva
-        END as gpoTipoRsvaOk")
+                            CASE 
+                                WHEN gpoCanalKpi = 'PT.com' THEN IF(gpoTipoRsva = 'Presencial','In',gpoTipoRsva)
+                                WHEN gpoCanalKpi = 'Outlet' THEN 'Outlet'
+                                ELSE gpoTipoRsva
+                            END as gpoTipoRsvaOk")
               ->select("CAST(CONCAT(HOUR(a.Hora), 
                             CASE
                                 WHEN MINUTE(a.Hora) >= 0  AND MINUTE(a.Hora)< 15 THEN ':00:00'
@@ -62,20 +82,13 @@ class Venta extends REST_Controller {
                             END) as TIME) AS H", FALSE)
               ->select("Hora")
               ->select("SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto", FALSE)
-              ->join("locs b", "a.Localizador = b.Localizador AND a.Fecha = b.Fecha", "right")
+              ->from("locs a")
               ->join("dep_asesores c", "a.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
               ->join("config_tipoRsva d", "IF(c.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
                                             AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo", "left", FALSE)
               ->group_by(array("a.Fecha", "H", "gpoTipoRsvaOk"))
               ->order_by("a.Fecha", "H");
-        
-         if( $td ){
-            $this->db->from("d_Locs a")
-                ->where("b.Fecha ", " CURDATE()", FALSE);
-        }else{
-            $this->db->from("t_Locs a")
-                ->where("b.Fecha < ", " CURDATE()", FALSE);
-         }
+
     }
 
     public function getVentaPorCanalSV_get(){
@@ -435,53 +448,24 @@ class Venta extends REST_Controller {
         $this->db->query("SET @pais   = '".$data['pais']."'");
         $this->db->query("SET @marca  = '".$data['marca']."'");
 
+        $this->locs( $data['soloVenta'] ? 1 : 0, true, $data['start'], $data['end'], $data['marca'] == 'Marcas Propias' ? true : false, $data['pais'] == 'MX' ? null : array($data['pais']) );       
+        $this->locs( $data['soloVenta'] ? 1 : 0, false, $data['start'], $data['end'], $data['marca'] == 'Marcas Propias' ? true : false, $data['pais'] == 'MX' ? null : array($data['pais']) );
+        
+
         $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
 
-        $this->locs( intVal($data['soloVenta']) );
-
-        $locs = $this->db->get_compiled_select();
-
-        if( $this->db->query("CREATE TEMPORARY TABLE locs $locs") ){
-            
-            $this->db->query("ALTER TABLE locs ADD PRIMARY KEY(Fecha,Localizador)");
-            
-            if( date('Y-m-d') <= date('Y-m-d', strtotime($data['start'])) && date('Y-m-d') >= date('Y-m-d', strtotime($data['start'])) ){
-                $this->locs( intVal($data['soloVenta']), TRUE );
-                $tdLocs = $this->db->get_compiled_select();
-
-                $this->db->query("INSERT INTO locs (SELECT * FROM ( $tdLocs ) a ) ON DUPLICATE KEY UPDATE marca = a.marca");
-            }
-            
-            
-            $this->xHora();
-            $xHora = $this->db->get_compiled_select();
-            
-            if( $this->db->query("CREATE TEMPORARY TABLE xHora $xHora") ){
+        if( $this->db->query("CREATE TEMPORARY TABLE xHora SELECT * FROM baseTD UNION SELECT * FROM baseYD") ){
                 
-                $this->db->query("ALTER TABLE xHora ADD PRIMARY KEY(Fecha, H, gpoTipoRsvaOk)");
+            $this->db->query("ALTER TABLE xHora ADD PRIMARY KEY(Fecha, H, gpoTipoRsvaOk)");
                 
-                if( date('Y-m-d') <= date('Y-m-d', strtotime($data['start'])) && date('Y-m-d') >= date('Y-m-d', strtotime($data['start'])) ){
-                    $this->xHora( TRUE );
-                    $xHoraTd = $this->db->get_compiled_select();
-
-                    $this->db->query("INSERT INTO xHora (SELECT * FROM ( $xHoraTd ) a ) ON DUPLICATE KEY UPDATE Monto = a.Monto");
-                }
+            $q = $this->db->get('xHora');
+            $l = $this->db->query("SELECT MAX(Last_Update) as lu FROM t_hoteles_test WHERE Fecha>=ADDDATE(CURDATE(),-1)");
                 
                 
-                $q = $this->db->get('xHora');
-                $l = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha>=ADDDATE(CURDATE(),-1)");
-                
-                
-                okResponse( 'Data obtenida', 'data', $q->result_array(), $this, 'lu', $l->row_array() );
-            }else{
-                errResponse('Error al compilar información final', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-            }
-
+            okResponse( 'Data obtenida', 'data', $q->result_array(), $this, 'lu', $l->row_array() );
         }else{
-            errResponse('Error al compilar información locs', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            errResponse('Error al compilar información final', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
         }
-
-
 
             return true;
 
