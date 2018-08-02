@@ -247,35 +247,51 @@ class Prenomina extends REST_Controller {
             $nomina = $params['corte'];
             $op     = $params['op'];
             
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS cxcCobrado");
-            $this->db->query("CREATE TEMPORARY TABLE cxcCobrado SELECT 
-                                cxc, MAX(n_pago) AS pagos, SUM(IF(quincena<$nomina, monto, 0)) AS pagado
-                            FROM
-                                rrhh_pagoCxC
-                            GROUP BY cxc;");
+            $this->db->query("SELECT pago INTO @payday FROM rrhh_calendarioNomina WHERE id=$nomina");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumary");
+            $this->db->query("CREATE TEMPORARY TABLE sumary SELECT 
+                cxcId,
+                montoFiscal,
+                maxParcialidad,
+                SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
+                SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
+                COUNT(*) AS parcialidades,
+                COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, id, NULL)) AS paidParc
+            FROM
+                cxc_payTable
+            WHERE 
+                NOT (status=1 AND montoParcial = 0)
+            GROUP BY cxcId");
+            $this->db->query("ALTER TABLE sumary ADD PRIMARY KEY (cxcId)");
+
+            $this->db->select("a.asesor,
+                                SUM(IF(tipo=0, a.montoParcial, 0)) as monto_0,
+                                GROUP_CONCAT(IF(tipo=0, CONCAT(Localizador,
+                                            ' (',
+                                            consecutivo,
+                                            '/',
+                                            parcialidades,
+                                            ')'), NULL)
+                                    SEPARATOR ', ') as locs_0,
+                                SUM(IF(tipo=1, a.montoParcial, 0)) as monto_1,
+                                GROUP_CONCAT(IF(tipo=1, CONCAT(Localizador,
+                                            ' (',
+                                            consecutivo,
+                                            '/',
+                                            parcialidades,
+                                            ')'), NULL)
+                                    SEPARATOR ', ') as locs_1", FALSE)
+                    ->from('cxc_payTable a')
+                    ->join('sumary b', 'a.cxcId = b.cxcId', 'left')
+                    ->join('asesores_cxc c', 'a.cxcId = c.id', 'left')
+                    ->where('payday = @payday', NULL, FALSE)
+                    ->group_by('asesor');
+
             
-            if( $q = $this->db->query("SELECT 
-                                            a.*, asesor, localizador, pagos, pagado, b.monto as total, tipo
-                                        FROM
-                                            rrhh_pagoCxC a
-                                                LEFT JOIN
-                                            asesores_cxc b ON a.cxc = b.id
-                                                LEFT JOIN
-                                            cxcCobrado c ON a.cxc = c.cxc
-                                            WHERE quincena = $nomina") ){
+            if( $q = $this->db->get() ){
 
-  
-                foreach($q->result_array() as $index => $info){
-                    
-                    if( !isset($result[$info['asesor']]) ){
-                        $result[$info['asesor']] = array($info);
-                    }else{
-                        array_push($result[$info['asesor']], $info);
-                    }
-
-                }
-                
-                okResponse( 'CXC Cargados', 'data', $result, $this );
+                okResponse( 'CXC Cargados', 'data', $q->result_array(), $this );
 
             }else{
                 errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());

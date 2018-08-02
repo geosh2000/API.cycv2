@@ -182,26 +182,36 @@ class Venta extends REST_Controller {
             venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
 
             if($t){
-                $pdvType = "WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial'";
+                $pdvType = "CASE 
+                WHEN gpoCanalKpi = 'PDV' THEN CASE WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial' END
+                WHEN tipoRsva LIKE '%Tag%' THEN 'CC OUT'
+                WHEN tipoRsva LIKE '%Out' THEN 'CC OUT'
+                WHEN tipoRsva LIKE '%IN' THEN 
+                    CASE WHEN cc IS NOT NULL THEN 'Mixcoac'
+                    WHEN tipoRsva LIKE '%PDV%' THEN 'PDV IN'
+                    ELSE 'CC IN' END
+                WHEN tipoRsva LIKE '%Presencial%' THEN 'PDV IN'
+                ELSE 'Online' 
+            END gpoInterno";
             }else{
-                $pdvType = "WHEN a.tipo = 1 THEN 'CC OUT'
-                        WHEN a.tipo = 2 THEN 'PDV IN'
-                        ELSE 'PDV Presencial'";
+                $pdvType = "CASE 
+                WHEN gpoCanalKpi = 'PDV' THEN CASE WHEN a.tipo = 1 THEN 'CC OUT'
+                WHEN a.tipo = 2 THEN 'PDV IN'
+                ELSE 'PDV Presencial' END
+                WHEN tipoRsva LIKE '%Tag%' THEN 'CC OUT'
+                WHEN tipoRsva LIKE '%Out' THEN 'CC OUT'
+                WHEN tipoRsva LIKE '%IN' THEN 
+                    CASE WHEN cc IS NOT NULL THEN 'Mixcoac'
+                    WHEN tipoRsva LIKE '%PDV%' THEN 'PDV IN'
+                    ELSE 'CC IN' END
+                WHEN tipoRsva LIKE '%Presencial%' THEN 'PDV Presencial'
+                ELSE 'Online' 
+            END gpoInterno";
             }
 
             
 
-            $this->db->select("Fecha, CASE 
-                                WHEN gpoCanalKpi = 'PDV' THEN CASE $pdvType END
-                                WHEN tipoRsva LIKE '%Tag%' THEN 'CC OUT'
-                                WHEN tipoRsva LIKE '%Out' THEN 'CC OUT'
-                                WHEN tipoRsva LIKE '%IN' THEN 
-                                    CASE WHEN cc IS NOT NULL THEN 'Mixcoac'
-                                    WHEN tipoRsva LIKE '%PDV%' THEN 'PDV IN'
-                                    ELSE 'CC IN' END
-                                WHEN tipoRsva LIKE '%Presencial%' THEN 'PDV Presencial'
-                                ELSE 'Online' 
-                            END gpoInterno", FALSE)
+            $this->db->select("Fecha, $pdvType", FALSE)
                         ->select($qSV, FALSE)
                         ->from("base a")
                         ->join("config_tipoRsva tp", "IF(a.dep IS NULL,

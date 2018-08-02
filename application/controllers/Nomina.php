@@ -12,6 +12,7 @@ class Nomina extends REST_Controller {
     $this->load->helper('json_utilities');
     $this->load->helper('jwt');
     $this->load->helper('mailing');
+    $this->load->helper('validators');
     $this->load->database();
     $this->load->model('Cliente_model');
   }
@@ -342,6 +343,30 @@ class Nomina extends REST_Controller {
       }
 
       return $result;
+
+    });
+
+    jsonPrint( $result );
+
+  }
+
+  public function cortesNomina_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $query = "SELECT 
+                            *
+                        FROM
+                            rrhh_calendarioNomina
+                        WHERE
+                            pago > ADDDATE(CURDATE(), - 365)
+                                AND pago < ADDDATE(CURDATE(), 365)";
+
+      if($q = $this->db->query($query)){
+        okResponse( 'Cortes obtenidos', 'data', $q->result_array(), $this );
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
 
     });
 

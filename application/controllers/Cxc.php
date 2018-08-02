@@ -597,6 +597,10 @@ class Cxc extends REST_Controller {
 
   }
 
+  // ==================================================
+  // Version 2.0
+  // ==================================================
+
   public function transactions_get(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
@@ -631,6 +635,296 @@ class Cxc extends REST_Controller {
     });
 
     $this->response($result);
+
+  }
+
+  public function cxcAsesor_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $asesor = $this->uri->segment(3);
+
+      $this->db
+          ->select("a.cxcId")
+          ->select("Localizador")
+          ->select("montoFiscal AS montoTotal")
+          ->select("maxParcialidad AS montoQuincenal")
+          ->select("SUM(IF(IF(a.status = 1
+                      AND CURDATE() >= ADDDATE(payday, - 2),
+                  2,
+                  IF(a.status = 0
+                          AND CURDATE() >= ADDDATE(payday, - 2),
+                      - 1,
+                      a.status)) = 2,
+              montoParcial,
+              0)) AS montoPagado",FALSE)
+          ->select("SUM(IF(IF(a.status = 1
+                      AND CURDATE() >= ADDDATE(payday, - 2),
+                  2,
+                  IF(a.status = 0
+                          AND CURDATE() >= ADDDATE(payday, - 2),
+                      - 1,
+                      a.status)) != 2,
+              montoParcial,
+              0)) AS montoPendiente",FALSE)
+          ->select("CONCAT(COALESCE(COUNT(IF(IF(a.status = 1
+                                      AND CURDATE() >= ADDDATE(payday, - 2),
+                                  2,
+                                  IF(a.status = 0
+                                          AND CURDATE() >= ADDDATE(payday, - 2),
+                                      - 1,
+                                      a.status)) = 2,
+                              a.id,
+                              NULL)),
+                          0),
+                  ' de ',
+                  COALESCE(COUNT(a.id), 0)) AS parcialidades",FALSE)
+          ->from('cxc_payTable a')
+          ->join('asesores_cxc b','a.cxcId = b.id','left')
+          ->not_group_start()
+            ->where('a.status',1)
+            ->where('montoParcial',0)
+          ->group_end()
+          ->where('a.asesor',$asesor)
+          ->group_by('Localizador')
+          ->having('montoPendiente >', 0)
+          ->order_by('Localizador');
+      
+      $query = $this->db->get_compiled_select();
+
+      if($q = $this->db->query($query)){
+        okResponse("Pagos Obtenidos", "data", $q->result_array(), $this);
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+      return $result;
+
+    });
+
+    $this->response( $result );
+
+  }
+
+  public function cxcCorte_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $payday = $this->uri->segment(3);
+      $byId = $this->uri->segment(4);
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumary");
+      $this->db->query("CREATE TEMPORARY TABLE sumary SELECT 
+          cxcId,
+          montoFiscal,
+          maxParcialidad,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
+          COUNT(*) AS parcialidades,
+          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, id, NULL)) AS paidParc
+      FROM
+          cxc_payTable
+      WHERE 
+          NOT (status=1 AND montoParcial = 0)
+      GROUP BY cxcId");
+      $this->db->query("ALTER TABLE sumary ADD PRIMARY KEY (cxcId)");
+
+      $this->db->select('a.id')
+                ->select('a.cxcId')
+                ->select('a.payday')
+                ->select('Localizador')
+                ->select('IF(a.status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(a.status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,a.status)) as status', FALSE)
+                ->select('montoParcial as montoQuincena')
+                ->from('cxc_payTable a')
+                ->join('sumary b', 'a.cxcId=b.cxcId', 'left')
+                ->join('asesores_cxc c', 'a.cxcId = c.id', 'left')
+                ->not_group_start()
+                ->where('montoParcial',0)
+                ->where('a.status',1)
+                ->group_end();
+
+      if( isset($byId) && $byId == 1 ){
+        $this->db->select('a.montoFiscal as montoTotalCxc')
+                ->select('consecutivo as numeroParcialidad')
+                ->select('parcialidades as totalParcialidades')
+                ->where('a.cxcId', $payday);
+      }else{
+        $this->db->select('a.maxParcialidad as montoParcialidades')
+                ->select('paidMonto as  montoPagado')
+                ->select('pendienteMonto as montoPendiente')
+                ->select('a.montoFiscal as montoTotalCxc')
+                ->select('paidParc as parcialidadesPagadas')
+                ->select('consecutivo as numeroParcialidad')
+                ->select('parcialidades as totalParcialidades')
+                ->where('payday', $payday);
+      }
+
+      $query = $this->db->get_compiled_select();
+
+      if($q = $this->db->query($query)){
+        okResponse("Pagos Obtenidos", "data", $q->result_array(), $this);
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+      return $result;
+
+    });
+
+    $this->response( $result );
+
+  }
+
+  public function editPayment_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $result = array( 'success' => array(), 'err' => array());
+
+      if( floatval($data['montoRestante']) == 0 ){
+        okResponse("No existen cambios", "data", true, $this);
+      }
+
+      if( floatval($data['montoRestante']) > 0 ){
+        for( $m = floatval($data['montoRestante']); $m > 0; $m = $m ){
+          $q = $this->db->select('*')
+              ->from('cxc_payTable')
+              ->where( array( 'cxcId' => $data['cxcId'], 'status' => 1, 'payday >' => $data['payday']) )
+              ->where( 'montoParcial < maxParcialidad', NULL, FALSE )
+              ->order_by('consecutivo')
+              ->limit(1)
+              ->get();
+  
+          $res = $q->row_array();
+  
+          if( $q->num_rows() > 0 ){
+            $tmpMontoDisp = floatval($res['maxParcialidad'])-floatval($res['montoParcial']);
+  
+            if( $m > $tmpMontoDisp ){
+              $monto = floatval($res['maxParcialidad']);
+              $m = $m - $tmpMontoDisp;
+              if( $m < .1 ){
+                $m = 0;
+              }
+            }else{
+              $monto = floatval($res['montoParcial'])+$m;
+              $m = 0;
+            }
+  
+            if($this->db->set(array('montoParcial' => $monto, 'updater' => $_GET['usid']))
+              ->where('id', $res['id'])->update('cxc_payTable')){
+                array_push($result['success'], $res['id']);
+              }else{
+                array_push($result['err'], array('id' => $res['id'], 'err' => $this->db->error()));
+              }
+          }else{
+            $q = $this->db->select('cxcId,
+                                    montoFiscal,
+                                    asesor,
+                                    consecutivo + 1 AS consecutivo,
+                                    maxParcialidad,
+                                    montoParcial,
+                                    1 AS status,
+                                    IF(DAY(payday) = 15,
+                                    LAST_DAY(payday),
+                                    ADDDATE(payday, 15)) AS payday', FALSE)
+              ->from('cxc_payTable')
+              ->where( array( 'cxcId' => $data['cxcId'] ) )
+              ->order_by('payday', 'DESC')
+              ->limit(1)
+              ->get();
+  
+            $res = $q->row_array();
+  
+  
+            if( $m > floatval($res['maxParcialidad']) ){
+              $monto = floatval($res['maxParcialidad']);
+              $m = $m - floatval($res['maxParcialidad']);
+              if( $m < .1 ){
+                $m = 0;
+              }
+            }else{
+              $monto = $m;
+              $m = 0;
+            }
+  
+            $res['montoParcial'] = $monto;
+  
+            if( $this->db->set($res)->set('updater', $_GET['usid'])
+                    ->insert('cxc_payTable') ){
+                      array_push($result['success'], $this->db->insert_id());
+              }else{
+                array_push($result['err'], array('id' => 'nuevo', 'err' => $this->db->error()));
+              }
+          }
+  
+        }
+      }else{
+        $data['montoRestante'] = floatval($data['montoRestante']) * (-1);
+
+        for( $m = floatval($data['montoRestante']); $m > 0; $m = $m ){
+          $q = $this->db->select('*')
+              ->from('cxc_payTable')
+              ->where( array( 'cxcId' => $data['cxcId'], 'status' => 1, 'payday >' => $data['payday'], 'montoParcial >' => 0) )
+              ->order_by('payday', 'DESC')
+              ->limit(1)
+              ->get();
+  
+          $res = $q->row_array();
+  
+          if( $q->num_rows() > 0 ){
+            
+            if( $m > floatval($res['montoParcial']) ){
+              $monto = 0;
+              $m = $m - floatval($res['montoParcial']);
+              if( $m < .1 ){
+                $m = 0;
+              }
+            }else{
+              $monto = floatval($res['montoParcial'])-$m;
+              $m = 0;
+            }
+  
+            if($this->db->set(array('montoParcial' => $monto, 'updater' => $_GET['usid']))
+              ->where('id', $res['id'])->update('cxc_payTable')){
+                array_push($result['success'], $res['id']);
+              }else{
+                array_push($result['err'], array('id' => $res['id'], 'err' => $this->db->error()));
+              }
+          }else{
+            errResponse('Error en la integridad de los pagos generados', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'error');
+          }
+  
+        }
+
+      }
+
+      
+
+      if( count($result['err']) == 0 ){
+
+        $params = array('updater' => $_GET['usid'], 'montoParcial' => $data['nuevoMonto']);
+        $this->db->set($params)
+            ->where('id', $data['id']);
+        
+        if( $data['statusChange'] == 1 ){
+          $this->db->set('status', $data['status']);
+        }
+
+        $this->db->update('cxc_payTable');
+
+        okResponse("Pagos Editados", "data", true, $this);
+      }else{
+        errResponse('Error en la base de datos. '.count($result['err']).' errores encontrados', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $result['err'][0]['err']);
+      }
+
+      return $result;
+
+    });
+
+    $this->response( $result );
 
   }
 
@@ -686,7 +980,12 @@ class Cxc extends REST_Controller {
           }
           break;
         case 'Localizador':
-          $this->db->where("a.Localizador", $data['search']['Localizador'], FALSE);
+          if( $data['noTx'] == true ){
+            $this->db->where("b.Localizador", $data['search']['Localizador'], FALSE);
+          }else{
+            $this->db->where("a.Localizador", $data['search']['Localizador'], FALSE);
+          }
+          
           break;
         case 'asesor':
           $this->db->where("b.asesor", $data['search']['asesor'], FALSE);
@@ -697,9 +996,11 @@ class Cxc extends REST_Controller {
         $this->db->group_by('cxcIdLink')->having('cxcIdLink IS NOT ', 'NULL', FALSE);
       }
 
+      
       if($q = $this->db->get()){
-
+        
         $data = $q->result_array();
+        // okResponse( 'CxC obtenidos', 'data', $data, $this );
 
         foreach($data as $index => $info){
           $url = $_SERVER['DOCUMENT_ROOT']."/img/cxc/".$info['cxcIdLink'].".jpg";
@@ -880,6 +1181,7 @@ class Cxc extends REST_Controller {
 
       foreach($data as $index => $item){
         $this->db->set($item)
+          ->set('maxParcialidad', $item['montoParcial'])
           ->set('updater', $_GET['usid']);
 
           if( $this->db->insert('cxc_payTable') ){
