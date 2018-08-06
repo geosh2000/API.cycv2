@@ -128,6 +128,8 @@ class Afiliados extends REST_Controller {
                                 IF(SUM(Llamadas_all) = 0, 0, SUM(Abandonadas) / SUM(Llamadas_all)) as Abandon,
                                 SUM(Sla_Calls) as Sla_Calls,
                                 IF(SUM(Llamadas_all) = 0, 0, SUM(Sla_Calls) / SUM(Llamadas_all)) as SLA,
+                                SUM(Total_Espera) as Total_Espera,
+                                IF(SUM(Llamadas_all) - SUM(Abandonadas) = 0, 0, SUM(Total_Espera) / (SUM(Llamadas_all) - SUM(Abandonadas))) as ASA,
                                 SUM(TT) as TT,
                                 IF(SUM(Llamadas_all) - SUM(Abandonadas) = 0, 0, SUM(TT) / (SUM(Llamadas_all) - SUM(Abandonadas))) as AHT
                             FROM result";
@@ -211,6 +213,7 @@ class Afiliados extends REST_Controller {
         COUNT(IF(Answered = 1, ac_id,NULL)) AS Llamadas_all,
         COUNT(IF(Answered = 0,ac_id,NULL)) as Abandonadas,
         COUNT(IF(Answered = 1 AND Espera <'00:00:".$params['tat']."',ac_id,NULL)) as Sla_Calls,
+        SUM(IF(Answered = 1, TIME_TO_SEC(Espera), 0)) as Total_Espera,
         SUM(IF(Answered = 1
         AND NOT (Desconexion = 'Transferida'
         AND Duracion_Real < '02:00:00'),TIME_TO_SEC(Duracion_Real),NULL)) as TT
@@ -244,6 +247,8 @@ class Afiliados extends REST_Controller {
         IF(COALESCE(Llamadas_all,0) = 0,0,COALESCE(Abandonadas,0) / COALESCE(Llamadas_all,0)) as Abandon,
         COALESCE(Sla_Calls,0) as Sla_Calls,
         IF(COALESCE(Llamadas_all,0) = 0,0,COALESCE(Sla_Calls,0) / COALESCE(Llamadas_all,0)) AS SLA,
+        COALESCE(Total_Espera,0) as Total_Espera,
+        IF(COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0) = 0,0,COALESCE(Total_Espera,0) / (COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0))) AS ASA,
         COALESCE(TT,0) as TT,
         IF(COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0) = 0,0,COALESCE(TT,0) / (COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0))) AS AHT
     FROM

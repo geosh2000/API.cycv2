@@ -30,6 +30,13 @@ class SolicitudBC extends REST_Controller {
                         "folio"      => null
                       );
       }else{
+        $val = $this->db->query("SELECT COUNT(*) as regs, MAX(fecha_in) as maxFecha FROM asesores_movimiento_vacantes WHERE asesor_in = ".$data['id']." AND fecha_in>='".$data['fechaBaja']."'");
+        $validate = $val->row_array();
+
+        if($validate['regs'] > 0){
+          errResponse('Existen fechas de registros mayores a la fecha asignada como baja. La baja debe asignarse con una fecha mayor a '.$validate['maxFecha'], REST_Controller::HTTP_BAD_REQUEST, $this, 'error', false);
+        }
+
         $result = $this->bajaSolicitud( $data, $_GET['usid'] );
       }
 
@@ -71,6 +78,14 @@ class SolicitudBC extends REST_Controller {
                         "folio"      => null
                       );
       }else{
+
+        $val = $this->db->query("SELECT COUNT(*) as regs, MAX(fecha_in) as maxFecha FROM asesores_movimiento_vacantes WHERE asesor_in = ".$data['id']." AND fecha_in>='".$data['fechaBaja']."'");
+        $validate = $val->row_array();
+
+        if($validate['regs'] > 0){
+          errResponse('Existen fechas de registros mayores a la fecha asignada como baja. La baja debe asignarse con una fecha mayor a '.$validate['maxFecha'], REST_Controller::HTTP_BAD_REQUEST, $this, 'error', false);
+        }
+
 
         $createSol = $this->bajaSolicitud( $data, $_GET['usid'] );
 

@@ -685,18 +685,128 @@ class Cxc extends REST_Controller {
             ->where('a.status',1)
             ->where('montoParcial',0)
           ->group_end()
-          ->where('a.asesor',$asesor)
+          ->where('b.asesor',$asesor)
           ->group_by('Localizador')
           ->having('montoPendiente >', 0)
           ->order_by('Localizador');
       
       $query = $this->db->get_compiled_select();
+      // okResponse("Pagos Obtenidos", "data", $query, $this);
 
       if($q = $this->db->query($query)){
         okResponse("Pagos Obtenidos", "data", $q->result_array(), $this);
       }else{
         errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
       }
+
+      return $result;
+
+    });
+
+    $this->response( $result );
+
+  }
+
+  public function downloadCxcAdmin_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $payday = $this->uri->segment(3);
+
+      $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumary");
+      $this->db->query("CREATE TEMPORARY TABLE sumary SELECT 
+          cxcId,
+          montoFiscal,
+          maxParcialidad,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
+          COUNT(*) AS parcialidades,
+          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, id, NULL)) AS paidParc
+      FROM
+          cxc_payTable
+      WHERE 
+          NOT (status=1 AND montoParcial = 0)
+      GROUP BY cxcId");
+      $this->db->query("ALTER TABLE sumary ADD PRIMARY KEY (cxcId)");
+
+      $querySCXC = "SELECT 
+                        NOMBREASESOR(b.asesor, 5) AS clave,
+                        IF(b.tipo = 0, 'SCXC', 'RESERVA') AS clave_saldo,
+                        'cd' AS compania_fiscal_defecto,
+                        ROUND(pendienteMonto, 2) AS saldo_inicial,
+                        ROUND(montoParcial, 2) AS desc_programado,
+                        parcialidades - paidParc AS Desc_pendientes,
+                        'activo' AS Estatus_de_pago
+                    FROM
+                        cxc_payTable a
+                            LEFT JOIN
+                        asesores_cxc b ON a.cxcId = b.id
+                            LEFT JOIN
+                        sumary c ON a.cxcId = c.cxcId
+                    WHERE
+                        montoParcial > 0 AND payday = '$payday'
+                            AND b.tipo = 1";
+        
+      $queryRESERVA ="SELECT 
+                        NOMBREASESOR(b.asesor, 5) AS clave,
+                        IF(b.tipo = 0, 'SCXC', 'RESERVA') AS clave_saldo,
+                        'cd' AS compania_fiscal_defecto,
+                        ROUND(pendienteMonto, 2) AS saldo_inicial,
+                        ROUND(montoParcial, 2) AS monto_descuento,
+                        'true' AS calculo_normal,
+                        'true' AS calculo_finiquito,
+                        Localizador AS referencia,
+                        'normal' AS tipo_nomina
+                    FROM
+                        cxc_payTable a
+                            LEFT JOIN
+                        asesores_cxc b ON a.cxcId = b.id
+                            LEFT JOIN
+                        sumary c ON a.cxcId = c.cxcId
+                    WHERE
+                        montoParcial > 0 AND payday = '$payday'
+                            AND b.tipo = 2";
+        
+      $querySALDOS = "SELECT 
+                        NOMBREASESOR(b.asesor, 5) AS clave,
+                        UPPER(NOMBREASESOR(b.asesor, 4)) AS Empleado,
+                        IF(Egreso > payday,
+                            'active',
+                            'inactive') AS Estatus_Empleado,
+                        IF(b.tipo = 0,
+                            'Descuento CXC',
+                            'Descuento Reservas Empleado') AS Concepto,
+                        date_created AS Fecha_de_captura,
+                        ROUND(c.montoFiscal, 2) AS saldo_inicial,
+                        ROUND(pendienteMonto, 2) AS saldo_actual,
+                        ROUND(montoParcial, 2) AS desc_pendiente,
+                        'true' AS calculo_normal,
+                        'true' AS calculo_finiquito,
+                        Localizador AS referencia,
+                        'normal' AS tipo_nomina
+                    FROM
+                        cxc_payTable a
+                            LEFT JOIN
+                        asesores_cxc b ON a.cxcId = b.id
+                            LEFT JOIN
+                        sumary c ON a.cxcId = c.cxcId
+                            LEFT JOIN
+                        Asesores d ON b.asesor = d.id
+                    WHERE
+                        montoParcial > 0 AND payday = '$payday'";
+
+      $result = array();
+
+      $scxc = $this->db->query($querySCXC);
+      $reservas = $this->db->query($queryRESERVA);
+      $saldos = $this->db->query($querySALDOS);
+
+      $result['scxc'] = $scxc->result_array();
+      $result['reservas'] = $reservas->result_array();
+      $result['saldos'] = $saldos->result_array();
+
+      okResponse("Pagos Obtenidos", "data", $result, $this);
+
 
       return $result;
 
@@ -732,6 +842,8 @@ class Cxc extends REST_Controller {
       $this->db->select('a.id')
                 ->select('a.cxcId')
                 ->select('a.payday')
+                ->select('NOMBREASESOR(c.asesor,5) as Colaborador', FALSE)
+                ->select('NOMBREASESOR(c.asesor,2) as Asesor', FALSE) 
                 ->select('Localizador')
                 ->select('IF(a.status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(a.status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,a.status)) as status', FALSE)
                 ->select('montoParcial as montoQuincena')
@@ -776,6 +888,178 @@ class Cxc extends REST_Controller {
   }
 
   public function editPayment_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $result = array( 'success' => array(), 'err' => array());
+
+      if( floatval($data['montoRestante']) == 0 ){
+        okResponse("No existen cambios", "data", true, $this);
+      }
+
+      $restante = $this->db->query("SELECT SUM(montoParcial) as restante FROM cxc_payTable WHERE cxcId=".$data['cxcId']." AND payday > '".$data['payday']."'");
+      $rest = $restante->row_array();
+
+      if( $data['montoRestante'] + floatval($rest['restante']) < 0 ){
+        errResponse('El monto a cobrar excede el monto restante. Favor de revisar detalle de pagos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', floatval($rest['restante']));
+      }
+
+      $q = $this->db->select('*')
+              ->from('cxc_payTable')
+              ->where( array( 'cxcId' => $data['cxcId'], 'status' => 1, 'payday >' => $data['payday']) )
+              ->order_by('consecutivo')
+              ->limit(1)
+              ->get();
+  
+      $res = $q->row_array();
+
+      if( floatval($data['montoRestante']) > 0 ){
+
+        if( $q->num_rows() > 0 ){
+          $monto = $data['montoRestante'] + $res['montoParcial'];
+          if($this->db->set(array('montoParcial' => $monto, 'updater' => $_GET['usid']))
+            ->where('id', $res['id'])->update('cxc_payTable')){
+            array_push($result['success'], $res['id']);
+          }else{
+            array_push($result['err'], array('id' => $res['id'], 'err' => $this->db->error()));
+          }
+
+        }else{
+          $q = $this->db->select('cxcId,
+                                  montoFiscal,
+                                  asesor,
+                                  consecutivo + 1 AS consecutivo,
+                                  maxParcialidad,
+                                  montoParcial,
+                                  1 AS status,
+                                  IF(DAY(payday) = 15,
+                                  LAST_DAY(payday),
+                                  ADDDATE(payday, 15)) AS payday', FALSE)
+            ->from('cxc_payTable')
+            ->where( array( 'cxcId' => $data['cxcId'] ) )
+            ->order_by('payday', 'DESC')
+            ->limit(1)
+            ->get();
+
+          $res = $q->row_array();
+
+
+          $monto = $data['montoRestante'];
+          $res['montoParcial'] = $monto;
+
+          if( $this->db->set($res)->set('updater', $_GET['usid'])
+                ->insert('cxc_payTable') ){
+                  array_push($result['success'], $this->db->insert_id());
+          }else{
+            array_push($result['err'], array('id' => 'nuevo', 'err' => $this->db->error()));
+          }
+        }
+
+      }else{
+
+        $data['montoRestante'] = floatval($data['montoRestante']) * (-1);
+
+        for( $m = floatval($data['montoRestante']); $m > 0; $m = $m ){
+          $q = $this->db->select('*')
+              ->from('cxc_payTable')
+              ->where( array( 'cxcId' => $data['cxcId'], 'status' => 1, 'payday >' => $data['payday']) )
+              ->where('montoParcial > maxParcialidad',NULL, FALSE)
+              ->order_by('payday')
+              ->limit(1)
+              ->get();
+  
+          $res = $q->row_array();
+  
+          if( $q->num_rows() > 0 ){
+            
+            if( $m > (floatval($res['montoParcial']-floatval($res['maxParcialidad']))) ){
+              $monto = $res['maxParcialidad'];
+              $m = $m - (floatval($res['montoParcial']-floatval($res['maxParcialidad'])));
+              if( $m < .1 ){
+                $m = 0;
+              }
+            }else{
+              $monto = floatval($res['montoParcial'])-$m;
+              $m = 0;
+            }
+  
+            if($this->db->set(array('montoParcial' => $monto, 'updater' => $_GET['usid']))
+              ->where('id', $res['id'])->update('cxc_payTable')){
+                array_push($result['success'], $res['id']);
+              }else{
+                array_push($result['err'], array('id' => $res['id'], 'err' => $this->db->error()));
+              }
+          }else{
+
+              $q = $this->db->select('*')
+                  ->from('cxc_payTable')
+                  ->where( array( 'cxcId' => $data['cxcId'], 'status' => 1, 'payday >' => $data['payday'], 'montoParcial >' => 0) )
+                  ->order_by('payday', 'DESC')
+                  ->limit(1)
+                  ->get();
+      
+              $res = $q->row_array();
+      
+              if( $q->num_rows() > 0 ){
+                
+                if( $m > floatval($res['montoParcial']) ){
+                  $monto = 0;
+                  $m = $m - floatval($res['montoParcial']);
+                  if( $m < .1 ){
+                    $m = 0;
+                  }
+                }else{
+                  $monto = floatval($res['montoParcial'])-$m;
+                  $m = 0;
+                }
+      
+                if($this->db->set(array('montoParcial' => $monto, 'updater' => $_GET['usid']))
+                  ->where('id', $res['id'])->update('cxc_payTable')){
+                    array_push($result['success'], $res['id']);
+                  }else{
+                    array_push($result['err'], array('id' => $res['id'], 'err' => $this->db->error()));
+                  }
+              }else{
+                errResponse('Error en la integridad de los pagos generados', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'error');
+              }
+      
+            
+          }
+  
+        }
+
+      }
+
+      
+
+      if( count($result['err']) == 0 ){
+
+        $params = array('updater' => $_GET['usid'], 'montoParcial' => $data['nuevoMonto']);
+        $this->db->set($params)
+            ->where('id', $data['id']);
+        
+        if( $data['statusChange'] == 1 ){
+          $this->db->set('status', $data['status']);
+        }
+
+        $this->db->update('cxc_payTable');
+
+        okResponse("Pagos Editados", "data", true, $this);
+      }else{
+        errResponse('Error en la base de datos. '.count($result['err']).' errores encontrados', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $result['err'][0]['err']);
+      }
+
+      return $result;
+
+    });
+
+    $this->response( $result );
+
+  }
+
+  public function deactivate_put(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 

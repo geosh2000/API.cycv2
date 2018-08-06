@@ -6,7 +6,7 @@ class venta_help{
 
       
         $class->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal, c.dep, vacante, puesto, cc, tipo")
-            ->select("IF(dtCreated BETWEEN a.Fecha AND ADDDATE(a.Fecha,1), Localizador, null) as NewLoc", FALSE)
+            ->select("IF(CAST(dtCreated as DATE) = a.Fecha, Localizador, null) as NewLoc, CAST(dtCreated as DATE) as dtCreated", FALSE)
             ->select('ml.asesor')
             ->from('t_hoteles_test a')
             ->join("t_masterlocators ml", "a.Localizador = ml.masterlocatorid", "left")          

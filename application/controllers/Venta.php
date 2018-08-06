@@ -169,8 +169,8 @@ class Venta extends REST_Controller {
             // START Venta Query
             // ======================================================================
             if($sv == 1){
-                $qSV = "IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) < 0
-                                AND NewLoc IS NOT NULL)
+                $qSV = "IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0
+                                AND NewLoc IS NULL)
                                 OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) >= 0,
                             SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN),
                             0) as Monto,
