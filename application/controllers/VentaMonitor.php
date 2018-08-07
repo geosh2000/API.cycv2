@@ -600,8 +600,9 @@ class VentaMonitor extends REST_Controller {
             $query = "SELECT 
                         a.Fecha,
                         a.asesor,
-                        NOMBREASESOR(a.asesor, 2) AS Nombre,
+                        NOMBREASESOR(a.asesor, 1) AS Nombre,
                         NOMBREASESOR(a.supervisor, 2) AS Supervisor,
+                        a.supervisor as idSup,
                         MontoSV,
                         IF(a.dep = 35, LocsIn, LocsNotIn) AS Locs,
                         IF(a.dep = 35,
@@ -666,7 +667,8 @@ class VentaMonitor extends REST_Controller {
                     WHERE
                         a.Fecha = CURDATE()
                             AND a.dep = $skill
-                            AND puesto IN (1 , 2)";
+                            AND puesto IN (1 , 2)
+                            AND horas > 0";
             
             if( $q = $this->db->query($query) ){
 
@@ -680,7 +682,10 @@ class VentaMonitor extends REST_Controller {
                     }
                 }
 
-                okResponse( "Información correctamente obtenida", 'data', $data, $this );
+                $lQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM graf_dailySale");
+                $lu = $lQ->row_array();
+
+                okResponse( "Información correctamente obtenida", 'data', $data, $this, 'lu', $lu['lu'] );
 
             }else{
                 errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
