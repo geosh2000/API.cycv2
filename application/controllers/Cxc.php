@@ -734,9 +734,11 @@ class Cxc extends REST_Controller {
                         IF(b.tipo = 0, 'SCXC', 'RESERVA') AS clave_saldo,
                         'cd' AS compania_fiscal_defecto,
                         ROUND(pendienteMonto, 2) AS saldo_inicial,
-                        ROUND(montoParcial, 2) AS desc_programado,
-                        parcialidades - paidParc AS Desc_pendientes,
-                        'activo' AS Estatus_de_pago
+                        ROUND(montoParcial, 2) AS monto_descuento,
+                        'true' AS calculo_normal,
+                        'true' AS calculo_finiquito,
+                        Localizador AS referencia,
+                        'normal' AS tipo_nomina
                     FROM
                         cxc_payTable a
                             LEFT JOIN
@@ -745,7 +747,7 @@ class Cxc extends REST_Controller {
                         sumary c ON a.cxcId = c.cxcId
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
-                            AND b.tipo = 1";
+                            AND b.tipo = 0";
         
       $queryRESERVA ="SELECT 
                         NOMBREASESOR(b.asesor, 5) AS clave,
@@ -765,7 +767,7 @@ class Cxc extends REST_Controller {
                         sumary c ON a.cxcId = c.cxcId
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
-                            AND b.tipo = 2";
+                            AND b.tipo = 1";
         
       $querySALDOS = "SELECT 
                         NOMBREASESOR(b.asesor, 5) AS clave,

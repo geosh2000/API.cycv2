@@ -169,17 +169,17 @@ class Venta extends REST_Controller {
             // START Venta Query
             // ======================================================================
             if($sv == 1){
-                $qSV = "IF((SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0
-                                AND NewLoc IS NULL)
-                                OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) >= 0,
-                            SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN),
-                            0) as Monto,
-                        COUNT(DISTINCT newLoc) as Locs,";
+                $qSV = "SUM(IF((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0,
+                        Monto,
+                        0)) AS Monto";
             }else{
-                $qSV = "SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) as Monto, COUNT(DISTINCT Localizador) as Locs,";
+                $qSV = "SUM(Monto) as Monto";
             }
 
-            venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
+            $table = venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
+
+            // okResponse('ok', 'query', $table, $this);
 
             if($t){
                 $pdvType = "CASE 
@@ -211,8 +211,8 @@ class Venta extends REST_Controller {
 
             
 
-            $this->db->select("Fecha, $pdvType", FALSE)
-                        ->select($qSV, FALSE)
+            $this->db->select("Fecha, $pdvType, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, NewLoc", FALSE)
+                        ->select('servicio as producto', FALSE)
                         ->from("base a")
                         ->join("config_tipoRsva tp", "IF(a.dep IS NULL,
                                 IF(a.asesor = - 1, - 1, 0),
@@ -224,13 +224,24 @@ class Venta extends REST_Controller {
                                 AND IF(a.tipo IS NULL OR a.tipo = '',
                                 0,
                                 a.tipo) = tp.tipo", 'left', FALSE)
-                        ->group_by('Fecha, gpoInterno');
+                        ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
+                        ->group_by('Fecha, Localizador, item');
+            $okQ = $this->db->get_compiled_select();
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS tmpItems");
+            $this->db->query("CREATE TEMPORARY TABLE tmpItems $okQ");
+
+            $this->db->select("Fecha,
+                                gpoInterno,
+                                COUNT(DISTINCT NewLoc) AS Localizadores", FALSE)
+                    ->select($qSV, FALSE)
+                    ->from("tmpItems a")
+                    ->group_by('Fecha, gpoInterno');
 
                         
 
             if($prod){
-                $this->db->select('servicio as producto', FALSE)
-                        ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
+                $this->db->select('producto', FALSE)
                         ->group_by('producto');
             }
 
@@ -484,7 +495,7 @@ class Venta extends REST_Controller {
         jsonPrint( $result );
 
     }
-       
+
     public function kpis_put(){
 
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
@@ -500,85 +511,62 @@ class Venta extends REST_Controller {
             // =================================================
             // START SET PARAMS FOR QUERY
             // =================================================
-                $this->db->query("SET @fecha = CAST('".$data['Fecha']."' as DATE)");
-                $this->db->query("SET @pais   = '".$data['pais']."'");
-                $this->db->query("SET @marca  = '".$data['marca']."'");
+                $qD = $this->db->query("SELECT CAST('".$data['Fecha']."' as DATE) as td, ADDDATE(CAST('".$data['Fecha']."' as DATE),-1) as yd, ADDDATE(CAST('".$data['Fecha']."' as DATE),-7) as lw, ADDDATE(CAST('".$data['Fecha']."' as DATE),-364) as ly");
+                $days = $qD->row_array();
 
-                // Define hour for historic views
-                if( $data['h'] == 1 ){
-                    $this->db->query("SET @hora  = '23:59:59'");  
-                }else{
-                    $this->db->query("SET @hora  = CAST('".$data['Hora']."' as TIME)");
-                }
+                $mp = $data['marca'] == 'Marcas Propias' ? true : false;
+                $pais = $data['marca'] == 'Marcas Propias' && $data['pais'] == 'MX' ? null : $data['pais'];
             // =================================================
             // END SET PARAMS FOR QUERY
             // =================================================
+
+            // =================================================
+            // START Base QUERY
+            // =================================================
+
+                $queryDate = array();
+
+                foreach($days as $day => $date){
+                    venta_help::base($this, $date, $date, true, $pais, $mp, true, false);
+                    $this->db->select('*')->from('base');
+
+                    // Define hour for historic views
+                    if( $data['h'] != 1 ){
+                        $this->db->where('Hora <=', "CAST('".$data['Hora']."' as TIME)", FALSE);
+                    }
+
+                    $tmpQuery = $this->db->get_compiled_select();
+
+                    $this->db->query("DROP TEMPORARY TABLE IF EXISTS $day");
+                    $this->db->query("CREATE TEMPORARY TABLE $day $tmpQuery");
+                }
+
+                $this->db->query("CREATE TEMPORARY TABLE baseOK SELECT * FROM td UNION SELECT * FROM yd UNION SELECT * FROM lw UNION SELECT * FROM ly");
+                $this->db->query("ALTER TABLE baseOK ADD PRIMARY KEY (Fecha, Hora, Localizador, item)");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS td");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS lw");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS ly");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS base");  
+            
+            // =================================================
+            // END Base QUERY
+            // =================================================
+                
                 
             // =================================================
             // START LOCS QUERY
             // =================================================
-                $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
-                $this->db->select("a.*, gpoCanalKpi")
-                    ->from("t_Locs a")
-                    ->join("chanGroups b", "a.chanId = b.id", "left")
-                    ->where('gpoCanalKpi !=', 'Agencias')
-                    ->where("marca = @marca
-                                AND (Fecha = @fecha
-                                OR Fecha = ADDDATE(@fecha, - 364)
-                                OR Fecha = ADDDATE(@fecha, - 7)
-                                OR Fecha = ADDDATE(@fecha, - 1)) AND Hora <= @hora ", "", FALSE);
-                
-                if( $data['marca'] == 'Marcas Propias' ){
-                    $this->db->where("pais", "@pais", FALSE);
-                }
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
+                $this->db->select("Fecha, Localizador, asesor, dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, tipo")
+                    ->from("baseOK")
+                    ->group_by(array('Fecha','Localizador'));
                 
                 $locs = $this->db->get_compiled_select();
-                $this->db->query("CREATE TEMPORARY TABLE locs $locs");
-                $this->db->query("ALTER TABLE locs ADD PRIMARY KEY (`Localizador`, `Venta`, `Fecha`, `Hora`)");
+                $this->db->query("CREATE TEMPORARY TABLE locsCount $locs");
+                $this->db->query("ALTER TABLE locsCount ADD PRIMARY KEY (`Localizador`, `Fecha`)");
                     
-                // INSERT TODADY RESULTS
-                if( date('Y-m-d') == $data['Fecha'] ){
-                    $this->db->select("a.*, gpoCanalKpi")
-                    ->from("d_Locs a")
-                    ->join("chanGroups b", "a.chanId = b.id", "left")
-                    ->where('gpoCanalKpi !=', 'Agencias')
-                    ->where("marca = @marca
-                                AND Fecha = @fecha AND Hora <= @hora ", "", FALSE);
-                    
-                    if( $data['marca'] == 'Marcas Propias' ){
-                        $this->db->where("pais", "@pais", FALSE);
-                    }
-                    
-                    $locs = $this->db->get_compiled_select();
-                    $this->db->query("INSERT INTO locs SELECT * FROM ($locs) a ON DUPLICATE KEY UPDATE asesor=a.asesor, tipo=a.tipo");
-                }
             // =================================================
             // END LOCS QUERY
-            // =================================================
-                
-            // =================================================
-            // START Define New Locs, Count Locs and Modified Locs
-            // =================================================
-                $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
-                
-                $this->db->select("Fecha, Localizador, asesor, tipo")
-                    ->select("SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS Monto,
-                                    IF(SUM(VentaMXN) > 0, Localizador, NULL) AS NewLoc,
-                                    IF(SUM(VentaMXN) > 0
-                                            AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                        Localizador,
-                                        NULL) AS CountLoc,
-                                    IF(SUM(VentaMXN) >= 0
-                                            OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                        Localizador,
-                                        NULL) AS ModifLoc", FALSE)
-                    ->from('locs')
-                    ->group_by(array("Fecha", "Localizador"));
-                $locsCount = $this->db->get_compiled_select();
-                $this->db->query("CREATE TEMPORARY TABLE locsCount $locsCount");
-                $this->db->query("ALTER TABLE locsCount ADD PRIMARY KEY (`Localizador`, `Fecha`)");
-            // =================================================
-            // END Define New Locs, Count Locs and Modified Locs
             // =================================================
                 
             // =================================================
@@ -586,46 +574,18 @@ class Venta extends REST_Controller {
             // =================================================
                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsOK");
                 
-                $this->db->select("a.*, NewLoc, CountLoc, ModifLoc, tipoRsva, d.Monto, gpoTipoRsva", FALSE)
-                    ->from("locs a")
-                    ->join("dep_asesores b", "a.asesor = b.asesor AND a.Fecha = b.Fecha", "left", FALSE)
+                $this->db->select("a.*, tipoRsva, gpoTipoRsva", FALSE)
+                    ->from("locsCount a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
-                                                AND IF(b.dep IS NULL,
+                                                AND IF(a.dep IS NULL,
                                                 IF(a.asesor = - 1, - 1, 0),
-                                                IF(b.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+                                                IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
-                                                    b.dep)) = c.dep", "left", FALSE)
-                    ->join("locsCount d", "a.Localizador = d.Localizador AND a.Fecha=d.Fecha", "left", FALSE);
+                                                    a.dep)) = c.dep", "left", FALSE);
                 $locsOK = $this->db->get_compiled_select();
                 $this->db->query("CREATE TEMPORARY TABLE locsOK $locsOK");
             // =================================================
             // END Locs Summary
-            // =================================================
-                
-            // =================================================
-            // START QUERY T_HOT
-            // =================================================
-                $this->db->select('a.*, gpoCanalKpi')
-                ->from("t_hoteles_test a")
-                ->join("chanGroups b", "a.chanId = b.id", "left")
-                ->where('gpoCanalKpi !=', 'Agencias')
-                ->where("marca = @marca
-                AND (Fecha = @fecha
-                OR Fecha = ADDDATE(@fecha, - 364)
-                OR Fecha = ADDDATE(@fecha, - 7)
-                OR Fecha = ADDDATE(@fecha, - 1)) AND Hora <= @hora ", "", FALSE);
-                
-                if( $data['marca'] == 'Marcas Propias' ){
-                    $this->db->where("pais", "@pais", FALSE);
-                }
-                
-                $tHot = $this->db->get_compiled_select();
-                
-                $this->db->query("DROP TEMPORARY TABLE IF EXISTS tHot");
-                $this->db->query("CREATE TEMPORARY TABLE tHot $tHot");
-                $this->db->query("ALTER TABLE tHot ADD PRIMARY KEY (`Localizador`, `Fecha`, `item`, `Hora`)");
-            // =================================================
-            // END QUERY T_HOT
             // =================================================
             
             // =================================================
@@ -637,42 +597,42 @@ class Venta extends REST_Controller {
                 }else{
                     $this->db->select("IF(isPaq = 0, i.servicio, 'Paquete') as servicio", FALSE);
                 }
-                
-                $this->db->select("h.*, NewLoc, CountLoc, ModifLoc, tipoRsva, d.Monto, gpoTipoRsva")
-                    ->from("tHot h")
-                    ->join("locsCount d", "h.Localizador = d.Localizador AND h.Fecha=d.Fecha", "left", FALSE)
-                    ->join("dep_asesores b", "d.asesor = b.asesor AND h.Fecha = b.Fecha", "left", FALSE)
-                    ->join("config_tipoRsva c", "IF(d.tipo IS NULL OR d.tipo='',0, d.tipo) = c.tipo
-                                                AND IF(b.dep IS NULL,
-                                                IF(d.asesor = - 1, - 1, 0),
-                                                IF(b.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+
+                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights")
+                    ->from("baseOK a")
+                    ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
+                                                AND IF(a.dep IS NULL,
+                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
-                                                    b.dep)) = c.dep", "left", FALSE)
-                    ->join("itemTypes i", "h.itemType = i.type AND h.categoryId = i.category", "left", FALSE)
-                    ->having("Localizador IS NOT ", "NULL", FALSE);
+                                                    a.dep)) = c.dep", "left", FALSE)
+                    ->join("itemTypes i", "a.itemType = i.type AND a.categoryId = i.category", "left", FALSE)
+                    ->group_by(array('Fecha','Localizador', 'item'));
 
                 $servicios = $this->db->get_compiled_select();
                 $this->db->query("CREATE TEMPORARY TABLE servicios $servicios");
+                $this->db->query("ALTER TABLE servicios ADD PRIMARY KEY (Fecha, Localizador, item)");
+
             // =================================================
             // END SERVICIOS SUMMARY
             // =================================================
                 
                 
-                if( $data['marca'] == 'Marcas Propias' ){
+                if( $mp ){
                 $this->db->select("Fecha, gpoCanalKpi as gpoCanalKpiOK, IF(gpoCanalKpi = 'PT.com' AND gpoTipoRsva = 'Presencial','In',gpoTipoRsva) as gpoTipoRsvaOk", FALSE);
                 }else{
                 $this->db->select("Fecha, IF(gpoCanalKpi = 'Afiliados', gpoCanalKpi, 'Afiliados') as gpoCanalKpiOK, IF(gpoCanalKpi = 'PT.com' AND gpoTipoRsva = 'Presencial','In',gpoTipoRsva) as gpoTipoRsvaOk", FALSE);
                 }
                 
                 
-                $this->db->select("COUNT(DISTINCT CountLoc) AS Locs,
-                                SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) MontoAll,
-                                SUM(IF(CountLoc IS NOT NULL,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) AS MontoSV,
-                                SUM(IF(NewLoc IS NULL AND Monto < 0,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) XldAll", FALSE)
+                $this->db->select("COUNT(DISTINCT NewLoc) AS Locs,
+                                SUM(Venta) MontoAll,
+                                SUM(IF((NewLoc IS NULL AND Venta > 0)
+                                    OR Venta > 0, Venta, 0)) as
+                                MontoSV,
+                                SUM(IF(NewLoc IS NULL AND Venta < 0,
+                                    Venta,
+                                    0)) as XldAll", FALSE)
                     ->from("locsOK")
                     ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk"))
                     ->order_by("gpoCanalKpiOk DESC, Fecha", FALSE);
@@ -686,14 +646,15 @@ class Venta extends REST_Controller {
                     $this->db->select("Fecha, IF(gpoCanalKpi = 'Afiliados', gpoCanalKpi, 'Afiliados') as gpoCanalKpiOK, IF(gpoCanalKpi = 'PT.com' AND gpoTipoRsva = 'Presencial','IN',gpoTipoRsva) as gpoTipoRsvaOk, servicio", FALSE);
                     }
                     
-                    $this->db->select("COUNT(DISTINCT CountLoc) AS Locs,
-                                SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) MontoAll,
-                                SUM(IF(CountLoc IS NOT NULL, VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) AS MontoSV,
-                                SUM(IF(NewLoc IS NULL AND Monto < 0,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) XldAll,
-                                SUM(clientNights) as newRN,
+                    $this->db->select("COUNT(DISTINCT NewLoc) AS Locs,
+                                SUM(Venta) MontoAll,
+                                SUM(IF((NewLoc IS NULL AND Venta > 0)
+                                    OR Venta > 0, Venta, 0)) as
+                                MontoSV,
+                                SUM(IF(NewLoc IS NULL AND Venta < 0,
+                                    Venta,
+                                    0)) as XldAll,
+                                    SUM(clientNights) as newRN,
                                 SUM(clientNights) as allRN", FALSE)
                     ->from("servicios")
                     ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk", "servicio"))
@@ -701,7 +662,7 @@ class Venta extends REST_Controller {
                     
                     
                     if( $s = $this->db->get() ){
-                        $lu = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                        $lu = $this->db->query("SELECT MAX(Last_Update) as lu FROM t_hoteles_test WHERE Fecha='".$days['td']."'");
                         $LU = $lu->row_array();
                         okResponse( 'Data obtenida', 'data', array( 'locs' => $l->result_array(), 'servicios' => $s->result_array()), $this, 'lu', $LU['lu'] );
                     }else{
@@ -724,189 +685,125 @@ class Venta extends REST_Controller {
             $data = $this->put();
 
             // =================================================
-            // START PARAMETROS
+            // START GET PARAMS
             // =================================================
-                $this->db->query("SET @fecha = CAST('".$data['Fecha']."' as DATE)");
-                $this->db->query("SET @pais   = '".$data['pais']."'");
-                $this->db->query("SET @marca  = '".$data['marca']."'");
+            $data = $this->put();
+            // =================================================
+            // END GET PARAMS
+            // =================================================
 
-                if( $data['h'] == 1 ){
-                    // Para producción
-                    $this->db->query("SET @hora  = '23:59:59'");  
-                    
-                    // Prueba para horario específico
-                    // $this->db->query("SET @hora  = CAST('20:00:00' as TIME)");
-                }else{
-                    // Para producción
-                    $this->db->query("SET @hora  = CAST('".$data['Hora']."' as TIME)");
+            // =================================================
+            // START SET PARAMS FOR QUERY
+            // =================================================
+                $qD = $this->db->query("SELECT CAST('".$data['Fecha']."' as DATE) as td, ADDDATE(CAST('".$data['Fecha']."' as DATE),-1) as yd, ADDDATE(CAST('".$data['Fecha']."' as DATE),-7) as lw, ADDDATE(CAST('".$data['Fecha']."' as DATE),-364) as ly");
+                $days = $qD->row_array();
 
-                    // Prueba para horario específico
-                    // $this->db->query("SET @hora  = CAST('19:00:00' as TIME)");
+                $mp = $data['marca'] == 'Marcas Propias' ? true : false;
+                $pais = $data['marca'] == 'Marcas Propias' && $data['pais'] == 'MX' ? null : $data['pais'];
+            // =================================================
+            // END SET PARAMS FOR QUERY
+            // =================================================
+
+            // =================================================
+            // START Base QUERY
+            // =================================================
+
+                $queryDate = array();
+
+                foreach($days as $day => $date){
+                    venta_help::base($this, $date, $date, true, $pais, $mp, true, false);
+                    $this->db->select('*')->from('base');
+
+                    // Define hour for historic views
+                    if( $data['h'] != 1 ){
+                        $this->db->where('Hora <=', "CAST('".$data['Hora']."' as TIME)", FALSE);
+                    }
+
+                    $tmpQuery = $this->db->get_compiled_select();
+
+                    $this->db->query("DROP TEMPORARY TABLE IF EXISTS $day");
+                    $this->db->query("CREATE TEMPORARY TABLE $day $tmpQuery");
                 }
-            // =================================================
-            // END PARAMETROS
-            // =================================================
+
+                $this->db->query("CREATE TEMPORARY TABLE baseOK SELECT * FROM td UNION SELECT * FROM yd UNION SELECT * FROM lw UNION SELECT * FROM ly");
+                $this->db->query("ALTER TABLE baseOK ADD PRIMARY KEY (Fecha, Hora, Localizador, item)");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS td");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS lw");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS ly");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS base");  
             
+            // =================================================
+            // END Base QUERY
+            // =================================================
+                
+                
             // =================================================
             // START LOCS QUERY
             // =================================================
-            
-                // =================================================
-                // START HISTORIC LOCS
-                // =================================================
-                    $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
-                    $this->db->select("a.*, gpoCanalKpi, c.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super")
-                        ->from("t_Locs a")
-                        ->join("chanGroups b", "a.chanId = b.id", "left")
-                        ->join("cat_branch c", "a.branchid = c.branchId", "left")
-                        ->join("PDVs p", "a.branchid = p.branchId", "left")
-                        // Definir el canal
-                        // ->where('gpoCanalKpi', 'PDV')
-                        ->where("marca = @marca
-                                    AND (Fecha = @fecha
-                                    OR Fecha = ADDDATE(@fecha, - 364)
-                                    OR Fecha = ADDDATE(@fecha, - 7)
-                                    OR Fecha = ADDDATE(@fecha, - 1)) AND Hora <= @hora ", "", FALSE);
-
-                    if( $data['marca'] == 'Marcas Propias' ){
-                        $this->db->where("pais", "@pais", FALSE);
-                    }
-
-                    $locs = $this->db->get_compiled_select();
-                    $this->db->query("CREATE TEMPORARY TABLE locs $locs");
-                    $this->db->query("ALTER TABLE locs ADD PRIMARY KEY (`Localizador`, `Venta`, `Fecha`, `Hora`)");
-                // =================================================
-                // END HISTORIC LOCS
-                // =================================================
-
-                // =================================================
-                // START TODAY LOCS
-                // =================================================
-                    if( date('Y-m-d') == $data['Fecha'] ){
-                        $this->db->select("a.*, gpoCanalKpi, c.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super")
-                        ->from("d_Locs a")
-                        ->join("chanGroups b", "a.chanId = b.id", "left")
-                        ->join("cat_branch c", "a.branchid = c.branchId", "left")
-                            ->join("PDVs p", "a.branchid = p.branchId", "left")
-                        // Definir el canal
-                        // ->where('gpoCanalKpi', 'PDV')
-                        ->where("marca = @marca
-                                    AND Fecha = @fecha AND Hora <= @hora ", "", FALSE);
-
-                        if( $data['marca'] == 'Marcas Propias' ){
-                            $this->db->where("pais", "@pais", FALSE);
-                        }
-
-                        $locs = $this->db->get_compiled_select();
-                        $this->db->query("INSERT INTO locs SELECT * FROM ($locs) a ON DUPLICATE KEY UPDATE asesor=a.asesor, tipo=a.tipo");
-                    }
-                // =================================================
-                // END TODAY LOCS
-                // =================================================
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
+                $this->db->select("Fecha, Localizador, asesor, dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, c.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super, a.branchid")
+                    ->from("baseOK a")
+                    ->join("cat_branch c", "a.branchid = c.branchId", "left")
+                    ->join("PDVs p", "a.branchid = p.branchId", "left")
+                    ->group_by(array('Fecha','Localizador'));
+                
+                $locs = $this->db->get_compiled_select();
+                $this->db->query("CREATE TEMPORARY TABLE locsCount $locs");
+                $this->db->query("ALTER TABLE locsCount ADD PRIMARY KEY (`Localizador`, `Fecha`)");
+                    
             // =================================================
             // END LOCS QUERY
             // =================================================
 
             // =================================================
-            // START Define New Locs, Count Locs and Modified Locs
-            // =================================================
-                $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
-
-                $this->db->select("Fecha, Localizador, asesor, tipo")
-                    ->select("SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS Monto,
-                                    IF(SUM(VentaMXN) > 0, Localizador, NULL) AS NewLoc,
-                                    IF(SUM(VentaMXN) >= 0
-                                            AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                        Localizador,
-                                        NULL) AS CountLoc,
-                                    IF(SUM(VentaMXN) > 0
-                                            OR SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
-                                        Localizador,
-                                        NULL) AS ModifLoc", FALSE)
-                    ->from('locs a')
-                    ->group_by(array("Fecha", "Localizador"));
-                $locsCount = $this->db->get_compiled_select();
-                $this->db->query("CREATE TEMPORARY TABLE locsCount $locsCount");
-                $this->db->query("ALTER TABLE locsCount ADD PRIMARY KEY (`Localizador`, `Fecha`)");
-            // =================================================
-            // END Define New Locs, Count Locs and Modified Locs
-            // =================================================
-
-            // =================================================
-            // START LOCS SUMMARY
+            // START Locs Summary
             // =================================================
                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsOK");
-
-                $this->db->select("a.*, NewLoc, CountLoc, ModifLoc, tipoRsva, d.Monto, gpoTipoRsva", FALSE)
-                    ->from("locs a")
-                    ->join("dep_asesores b", "a.asesor = b.asesor AND a.Fecha = b.Fecha", "left", FALSE)
+                    
+                $this->db->select("a.*, tipoRsva, gpoTipoRsva", FALSE)
+                    ->from("locsCount a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
-                                                AND IF(b.dep IS NULL,
+                                                AND IF(a.dep IS NULL,
                                                 IF(a.asesor = - 1, - 1, 0),
-                                                IF(b.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+                                                IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
-                                                    b.dep)) = c.dep", "left", FALSE)
-                    ->join("locsCount d", "a.Localizador = d.Localizador AND a.Fecha=d.Fecha", "left", FALSE);
+                                                    a.dep)) = c.dep", "left", FALSE);
                 $locsOK = $this->db->get_compiled_select();
                 $this->db->query("CREATE TEMPORARY TABLE locsOK $locsOK");
             // =================================================
-            // END LOCS SUMMARY
+            // END Locs Summary
             // =================================================
 
             // =================================================
-            // START SERVICES SUMMARY
+            // START SERVICIOS SUMMARY
             // =================================================
                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS servicios");
-
-                $this->db->select('a.*, gpoCanalKpi')
-                    ->from("t_hoteles_test a")
-                    ->join("chanGroups b", "a.chanId = b.id", "left")
-                    // Definir canal
-                    // ->where('gpoCanalKpi', 'PDV')
-                    ->where("marca = @marca
-                                AND (Fecha = @fecha
-                                OR Fecha = ADDDATE(@fecha, - 364)
-                                OR Fecha = ADDDATE(@fecha, - 7)
-                                OR Fecha = ADDDATE(@fecha, - 1)) AND Hora <= @hora ", "", FALSE);
-
-                if( $data['marca'] == 'Marcas Propias' ){
-                    $this->db->where("pais", "@pais", FALSE);
-                }
-
-                $tHot = $this->db->get_compiled_select();
-
-                $this->db->query("DROP TEMPORARY TABLE IF EXISTS tHot");
-                $this->db->query("CREATE TEMPORARY TABLE tHot $tHot");
-                $this->db->query("ALTER TABLE tHot ADD PRIMARY KEY (`Localizador`, `Fecha`, `item`, `Hora`)");
-
                 if( $data['paq'] == 1 ){
                     $this->db->select("i.servicio");
                 }else{
                     $this->db->select("IF(isPaq = 0, i.servicio, 'Paquete') as servicio", FALSE);
                 }
 
-                $this->db->select("h.*, NewLoc, CountLoc, ModifLoc, tipoRsva, d.Monto, gpoTipoRsva, j.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super")
-                    ->from("tHot h")
-                    ->join("locsCount d", "h.Localizador = d.Localizador AND h.Fecha=d.Fecha", "left", FALSE)
-                    ->join("dep_asesores b", "d.asesor = b.asesor AND h.Fecha = b.Fecha", "left", FALSE)
-                    ->join("config_tipoRsva c", "IF(d.tipo IS NULL OR d.tipo='',0, d.tipo) = c.tipo
-                                                AND IF(b.dep IS NULL,
-                                                IF(d.asesor = - 1, - 1, 0),
-                                                IF(b.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights, j.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super, a.branchid")
+                    ->from("baseOK a")
+                    ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
+                                                AND IF(a.dep IS NULL,
+                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
-                                                    b.dep)) = c.dep", "left", FALSE)
-                    ->join("itemTypes i", "h.itemType = i.type AND h.categoryId = i.category", "left", FALSE)
-                    ->join("cat_branch j", "h.branchid = j.branchId", "left")
-                    ->join("PDVs p", "h.branchid = p.branchId", "left")
-                    ->having("Localizador IS NOT ", "NULL", FALSE);
-
+                                                    a.dep)) = c.dep", "left", FALSE)
+                    ->join("itemTypes i", "a.itemType = i.type AND a.categoryId = i.category", "left", FALSE)
+                    ->join("cat_branch j", "a.branchid = j.branchId", "left")
+                    ->join("PDVs p", "a.branchid = p.branchId", "left")
+                    ->group_by(array('Fecha','Localizador', 'item'));
 
                 $servicios = $this->db->get_compiled_select();
                 $this->db->query("CREATE TEMPORARY TABLE servicios $servicios");
+                $this->db->query("ALTER TABLE servicios ADD PRIMARY KEY (Fecha, Localizador, item)");
+
             // =================================================
-            // END SERVICES SUMMARY
+            // END SERVICIOS SUMMARY
             // =================================================
-            
             
             // =================================================
             // START All PDV LISTED
@@ -942,52 +839,51 @@ class Venta extends REST_Controller {
             // =================================================
             // START LOCS FINAL QUERY
             // =================================================
-                
-                $this->db->select("Fecha, PdvName as gpoTipoRsvaOk, a.branchid, PdvSupervisor as gpoCanalKpiOK, PdvAsesor, COUNT(DISTINCT CountLoc) AS Locs, city,
-                                SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) MontoAll,
-                                SUM(IF(gpoCanalKpi != 'PDV', VentaMXN + OtrosIngresosMXN + EgresosMXN, 0)) as MontoNoShopMontoAll,
-                                COUNT(gpoCanalKpi) as gpos,
-                                gpoCanalKpi as kpi,
-                                SUM(IF(CountLoc IS NOT NULL,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) AS MontoSV,
-                                SUM(IF(CountLoc IS NOT NULL AND gpoCanalKpi != 'PDV',
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) AS MontoNoShopMontoSV,
-                                SUM(IF(NewLoc IS NULL AND Monto < 0,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) XldAll", FALSE)
-                    ->from("pdvList a")
-                    ->join("locsOK b", "a.branchid=b.branchid",'left')
-                    ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk", 'PdvAsesor'))
-                    ->order_by("branch DESC, Fecha", FALSE);
 
+                $this->db->select("Fecha, PdvName as gpoTipoRsvaOk, a.branchid, PdvSupervisor as gpoCanalKpiOK, PdvAsesor, 
+                                    COUNT(DISTINCT NewLoc) AS Locs,
+                                    SUM(Venta) MontoAll,
+                                    SUM(IF(gpoCanalKpi != 'PDV', Venta, 0)) as MontoNoShopMontoAll,
+                                    COUNT(gpoCanalKpi) as gpos,
+                                    gpoCanalKpi as kpi,
+                                    SUM(IF((NewLoc IS NULL AND Venta > 0)
+                                        OR Venta > 0, Venta, 0)) as MontoSV,
+                                    SUM(IF((NewLoc IS NULL AND gpoCanalKpi != 'PDV' AND Venta > 0)
+                                        OR Venta > 0, Venta, 0)) as MontoNoShopMontoSV,
+                                    SUM(IF(NewLoc IS NULL AND Venta < 0,
+                                        Venta,
+                                        0)) as XldAll", FALSE)
+                        ->from("pdvList a")
+                        ->join("locsOK b", "a.branchid=b.branchid",'left')
+                        ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk", 'PdvAsesor'))
+                        ->having('gpoCanalKpiOK IS NOT NULL', NULL, FALSE)
+                        ->order_by("branch DESC, Fecha", FALSE);
 
                 if( $l = $this->db->get() ){
 
-                    if( $data['marca'] == 'Marcas Propias' ){
-                        $this->db->select("Fecha, super as gpoCanalKpiOK, branch as gpoTipoRsvaOk, servicio", FALSE);
-                    }else{
-                        $this->db->select("Fecha, IF(gpoCanalKpi = 'Afiliados', gpoCanalKpi, 'Afiliados') as gpoCanalKpiOK, IF(gpoCanalKpi = 'PT.com' AND gpoTipoRsva = 'Presencial','IN',gpoTipoRsva) as gpoTipoRsvaOk, servicio", FALSE);
-                    }
-
-                    $this->db->select("COUNT(DISTINCT CountLoc) AS Locs,
-                                SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) MontoAll,
-                                SUM(IF(CountLoc IS NOT NULL, VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) AS MontoSV,
-                                SUM(IF(NewLoc IS NULL AND Monto < 0,
-                                    VentaMXN + OtrosIngresosMXN + EgresosMXN,
-                                    0)) XldAll,
-                                SUM(IF(NewLoc IS NOT NULL, clientNights,0)) as newRN,
-                                SUM(clientNights) as allRN", FALSE)
-                    ->from("servicios")
-                    ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk", "servicio"))
-
-                        ->order_by("servicio, gpoCanalKpiOk, Fecha", FALSE);
-
+                            $this->db->select("Fecha, PdvName as gpoTipoRsvaOk, a.branchid, PdvSupervisor as gpoCanalKpiOK, PdvAsesor, servicio,
+                                        COUNT(DISTINCT NewLoc) AS Locs,
+                                        SUM(Venta) MontoAll,
+                                        SUM(IF(gpoCanalKpi != 'PDV', Venta, 0)) as MontoNoShopMontoAll,
+                                        COUNT(gpoCanalKpi) as gpos,
+                                        gpoCanalKpi as kpi,
+                                        SUM(IF((NewLoc IS NULL AND Venta > 0)
+                                            OR Venta > 0, Venta, 0)) as MontoSV,
+                                        SUM(IF((NewLoc IS NULL AND gpoCanalKpi != 'PDV' AND Venta > 0)
+                                            OR Venta > 0, Venta, 0)) as MontoNoShopMontoSV,
+                                        SUM(IF(NewLoc IS NULL AND Venta < 0,
+                                            Venta,
+                                            0)) as XldAll,
+                                        SUM(clientNights) as newRN,
+                                        SUM(clientNights) as allRN", FALSE)
+                            ->from("pdvList a")
+                            ->join("servicios b", "a.branchid=b.branchid",'left')
+                            ->group_by(array("Fecha", "gpoCanalKpiOK", "gpoTipoRsvaOk", "servicio"))
+                            ->having('gpoCanalKpiOK IS NOT NULL', NULL, FALSE)
+                            ->order_by("servicio, Fecha", FALSE);
 
                     if( $s = $this->db->get() ){
-                        $lu = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                        $lu = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha='".$days['td']."'");
                         $LU = $lu->row_array();
                         okResponse( 'Data obtenida', 'data', array( 'locs' => $l->result_array(), 'servicios' => $s->result_array()), $this, 'lu', $LU['lu'] );
                     }else{
@@ -1012,7 +908,8 @@ class Venta extends REST_Controller {
                         FROM
                             dep_asesores
                         WHERE
-                            Fecha = CURDATE() AND asesor = ".$_GET['usid']);
+                            Fecha = CURDATE() AND asesor = ".$_GET['usid']." 
+                        HAVING sup IS NOT NULL");
         
         okResponse('Supervisor obtenido', 'data', $q->row_array(), $this);
     }
