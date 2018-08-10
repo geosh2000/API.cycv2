@@ -609,14 +609,14 @@ class Cxc extends REST_Controller {
       $rev = $this->uri->segment(4);
 
       if( $rev != 1 ){
-        $this->db->select('a.id, a.localizador, NOMBREASESOR(asesor,1) as asesor, SUM(montoFiscal) as Monto, cxcIdLink, a.status')
+        $this->db->select('a.id, b.transactionId, a.localizador, NOMBREASESOR(asesor,1) as asesor, SUM(montoFiscal) as Monto, cxcIdLink, a.status')
           ->from('asesores_cxc a')
           ->join('cxc_transactions b', 'a.id=cxcIdLink', 'left')
           ->where(array('a.localizador' => $localizador))
           ->group_by(array('a.id'))
           ->order_by('fecha_cxc');
       }else{
-        $this->db->select('a.id, a.Localizador, aplicablePara, montoFiscal, cxcIdLink, COALESCE(status,0) as status')
+        $this->db->select('a.id, a.transactionId, a.Localizador, aplicablePara, montoFiscal, cxcIdLink, COALESCE(status,0) as status')
           ->from('cxc_transactions a')
           ->join('asesores_cxc b', 'b.id=cxcIdLink', 'left')
           ->where(array('a.localizador' => $localizador))
@@ -1245,7 +1245,7 @@ class Cxc extends REST_Controller {
                 ->join('cxcRegs c', 'a.Localizador=c.Localizador', 'left');
       }
 
-      $this->db->select('a.id, COALESCE(a.Localizador, b.Localizador) as Localizador, dtCreated, montoFiscal, a.monto, currency, aplicablePara, 
+      $this->db->select('a.id, a.transactionId, COALESCE(a.Localizador, b.Localizador) as Localizador, dtCreated, montoFiscal, a.monto, currency, aplicablePara, 
                         autorizadoPor, cobradoPor, b.id as cxcIdLink, asesor as asesorID, NOMBREASESOR(asesor,1) as asesor, d.monto as totalCxc, 
                         status, tipo, firmado, comments, NOMBREASESOR(created_by,1) created_by, 
                         NOMBREASESOR(updated_by,1) updated_by, regs as posibleLinks')
