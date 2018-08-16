@@ -265,7 +265,7 @@ class Prenomina extends REST_Controller {
             GROUP BY cxcId");
             $this->db->query("ALTER TABLE sumary ADD PRIMARY KEY (cxcId)");
 
-            $this->db->select("a.asesor,
+            $this->db->select("c.asesor,
                                 SUM(IF(tipo=0, a.montoParcial, 0)) as monto_0,
                                 GROUP_CONCAT(IF(tipo=0, CONCAT(Localizador,
                                             ' (',
@@ -286,7 +286,7 @@ class Prenomina extends REST_Controller {
                     ->join('sumary b', 'a.cxcId = b.cxcId', 'left')
                     ->join('asesores_cxc c', 'a.cxcId = c.id', 'left')
                     ->where('payday = @payday', NULL, FALSE)
-                    ->group_by('asesor');
+                    ->group_by('c.asesor');
 
             
             if( $q = $this->db->get() ){

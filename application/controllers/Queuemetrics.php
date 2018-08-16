@@ -94,7 +94,7 @@ class Queuemetrics extends REST_Controller {
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
-      $this->db->select('Skill, Cola, queue, Departamento, monShow, direction, displaySum')
+      $this->db->select('Skill, Cola, queue, Departamento, monShow, direction, displaySum, sede')
               ->from('Cola_Skill a')
               ->join('PCRCs b', 'a.monShow = b.id', 'left')
               ->where('active', '1')

@@ -516,6 +516,12 @@ class Venta extends REST_Controller {
 
                 $mp = $data['marca'] == 'Marcas Propias' ? true : false;
                 $pais = $data['marca'] == 'Marcas Propias' && $data['pais'] == 'MX' ? null : $data['pais'];
+
+                if( $mp == true && $pais == 'CO' ){
+                    $currency = 'COP';
+                }else{
+                    $currency = 'MXN';
+                }
             // =================================================
             // END SET PARAMS FOR QUERY
             // =================================================
@@ -557,7 +563,7 @@ class Venta extends REST_Controller {
             // START LOCS QUERY
             // =================================================
                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
-                $this->db->select("Fecha, Localizador, asesor, dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, tipo")
+                $this->db->select("Fecha, Localizador, asesor, dep, SUM(Venta".$currency."+OtrosIngresos".$currency."+Egresos".$currency.") as Venta, NewLoc, gpoCanalKpi, tipo")
                     ->from("baseOK")
                     ->group_by(array('Fecha','Localizador'));
                 
@@ -598,7 +604,7 @@ class Venta extends REST_Controller {
                     $this->db->select("IF(isPaq = 0, i.servicio, 'Paquete') as servicio", FALSE);
                 }
 
-                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights")
+                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(Venta".$currency."+OtrosIngresos".$currency."+Egresos".$currency.") as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights")
                     ->from("baseOK a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,

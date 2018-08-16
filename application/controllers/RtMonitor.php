@@ -48,6 +48,9 @@ class RtMonitor extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){ 
         
       $params = $this->put();
+
+      $pais = $this->db->query("SELECT sede FROM PCRCs a LEFT JOIN Cola_Skill b ON a.id=b.Skill WHERE queue=".$params['queues'][0]);
+      $pQ = $pais->row_array();
         
       $blocks = array(
             "RealTimeDO.RTRiassunto",
@@ -67,11 +70,19 @@ class RtMonitor extends REST_Controller {
             "Agents"
         );
 
+        $blocksSearch = array();
+
+        if( $pQ['sede'] == 'CO' ){ $suf = "_CO"; }else{ $suf = ''; }
+        foreach( $blocks as $index => $title ){
+            array_push($blocksSearch, $title.$suf);
+        }
+        
+
       $this->db->select('json')
               ->select('LOWER(tipo) as tipo', FALSE)
               ->select('Last_update')
               ->from('ccexporter.rtMonitor', false)
-              ->where_in( 'tipo', $blocks );
+              ->where_in( 'tipo', $blocksSearch );
 
       if( $q = $this->db->get() ){
           
@@ -80,9 +91,10 @@ class RtMonitor extends REST_Controller {
           
           foreach($result as $index => $info){
               $json = json_decode(str_replace("&nbsp;", "", str_replace("'", '"', utf8_decode(str_replace("u'", "'", $info['json'])))));
-              $arr[strtolower($info['tipo'])] = $json;
+              $tipo = strtolower(substr($info['tipo'],0,($suf == '_CO' ? -3 : 100)));
+              $arr[$tipo] = $json;
           }
-          
+        //   okResponse('arr', 'arr', $arr, $this, 'blocks', $blocks);
           $agents = array();
           
           foreach($arr['agents'] as $i => $agent){
@@ -107,6 +119,8 @@ class RtMonitor extends REST_Controller {
               
           }
           
+          $agentsOK = array();
+
           $agProc = $this->buildAgents( $bl['realtimedo.rtagentsraw'] );
           foreach($agProc as $ag => $info){
               $qs = explode(":",$info['queue']);

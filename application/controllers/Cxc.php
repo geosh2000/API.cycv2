@@ -712,6 +712,8 @@ class Cxc extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
       $payday = $this->uri->segment(3);
+      $depSelect = $this->uri->segment(4);
+      $dep = $depSelect == 29 ? 'dep=29' : 'dep!=29';
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumary");
       $this->db->query("CREATE TEMPORARY TABLE sumary SELECT 
@@ -745,9 +747,12 @@ class Cxc extends REST_Controller {
                         asesores_cxc b ON a.cxcId = b.id
                             LEFT JOIN
                         sumary c ON a.cxcId = c.cxcId
+                            LEFT JOIN
+                        dep_asesores dp ON b.asesor=dp.asesor AND dp.Fecha=CURDATE()
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
-                            AND b.tipo = 0";
+                            AND b.tipo = 0
+                            AND dp.$dep";
         
       $queryRESERVA ="SELECT 
                         NOMBREASESOR(b.asesor, 5) AS clave,
@@ -765,9 +770,12 @@ class Cxc extends REST_Controller {
                         asesores_cxc b ON a.cxcId = b.id
                             LEFT JOIN
                         sumary c ON a.cxcId = c.cxcId
+                            LEFT JOIN
+                        dep_asesores dp ON b.asesor=dp.asesor AND dp.Fecha=CURDATE()
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
-                            AND b.tipo = 1";
+                            AND b.tipo = 1
+                            AND dp.$dep";
         
       $querySALDOS = "SELECT 
                         NOMBREASESOR(b.asesor, 5) AS clave,
@@ -794,8 +802,11 @@ class Cxc extends REST_Controller {
                         sumary c ON a.cxcId = c.cxcId
                             LEFT JOIN
                         Asesores d ON b.asesor = d.id
+                            LEFT JOIN
+                        dep_asesores dp ON b.asesor=dp.asesor AND dp.Fecha=CURDATE()
                     WHERE
-                        montoParcial > 0 AND payday = '$payday'";
+                        montoParcial > 0 AND payday = '$payday'
+                        AND dp.$dep";
 
       $result = array();
 
@@ -825,6 +836,8 @@ class Cxc extends REST_Controller {
       $payday = $this->uri->segment(3);
       $byId = $this->uri->segment(4);
 
+      $name = $byId == 1 ? 1 : 2;
+
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS sumary");
       $this->db->query("CREATE TEMPORARY TABLE sumary SELECT 
           cxcId,
@@ -845,7 +858,7 @@ class Cxc extends REST_Controller {
                 ->select('a.cxcId')
                 ->select('a.payday')
                 ->select('NOMBREASESOR(c.asesor,5) as Colaborador', FALSE)
-                ->select('NOMBREASESOR(c.asesor,2) as Asesor', FALSE) 
+                ->select('NOMBREASESOR(c.asesor,'.$name.') as Asesor', FALSE) 
                 ->select('Localizador')
                 ->select('IF(a.status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(a.status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,a.status)) as status', FALSE)
                 ->select('montoParcial as montoQuincena')
@@ -856,6 +869,15 @@ class Cxc extends REST_Controller {
                 ->where('montoParcial',0)
                 ->where('a.status',1)
                 ->group_end();
+      
+      if( isset($byId) && $byId != 1 ){
+        $this->db->join('dep_asesores dp', 'c.asesor = dp.asesor AND dp.Fecha=CURDATE()', 'left');
+                if($byId == 29){
+                  $this->db->where('dp.dep', 29);
+                }else{
+                  $this->db->where('dp.dep !=', 29);
+                }
+      }
 
       if( isset($byId) && $byId == 1 ){
         $this->db->select('a.montoFiscal as montoTotalCxc')

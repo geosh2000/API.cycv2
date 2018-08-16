@@ -38,4 +38,12 @@ class Navbar extends REST_Controller {
       errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
     }
   }
+
+  public function menuRAW_get(){
+    if($q = $this->db->query("SELECT * FROM menu WHERE activo=1 ORDER BY parent, titulo")){
+      okResponse('Menu cargado', 'data', $q->result_array(), $this);
+    }else{
+      errResponse('Error al cargar menú', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+    }
+  }
 }
