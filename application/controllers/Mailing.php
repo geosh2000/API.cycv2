@@ -230,7 +230,7 @@ class Mailing extends REST_Controller {
                                         FROM
                                             dep_asesores
                                         WHERE
-                                            dep != 29 AND vacante IS NOT NULL
+                                            dep NOT IN (29,1) AND vacante IS NOT NULL
                                                 AND Fecha = CURDATE()) a
                                             LEFT JOIN
                                         (SELECT 

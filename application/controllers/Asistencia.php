@@ -1552,10 +1552,26 @@ public function pyaV2_get(){
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
             $data = $this->put();
+            $cambioFlag = $this->uri->segment(3);
+            $tipo = $this->uri->segment(4);
+            $caso = $this->uri->segment(5);
 
             $error = array();
 
+            $regsByAsesor = array();
+
             foreach($data as $item => $info){
+
+                if(isset($regsByAsesor[$info['asesor']])){
+                    $regsByAsesor[$info['asesor']]++;
+                }else{
+                    $regsByAsesor[$info['asesor']] = 1;
+                }
+
+                $oldQ = $this->db->query("SELECT * FROM asesores_programacion WHERE asesor=".$info['asesor']." AND Fecha='".$info['Fecha']."'");
+                $oldV = $oldQ->row_array();
+                $oldVal = json_encode($oldV);
+
                 $insert = array( 
                     'Fecha' => $info['Fecha'], 
                     'asesor' => $info['asesor'], 
@@ -1602,12 +1618,90 @@ public function pyaV2_get(){
                 $nIns = $this->db->set($info)->get_compiled_insert('asesores_programacion');
                 $nQ = $nIns.$nUpd;
                 $this->db->query($nQ);
+
+                if( isset($cambioFlag) && $cambioFlag == 1 ){
+                    $campo = "Cambio de horario ".$info['Fecha'];
+                }else{
+                    $campo = "Ajuste de horario ".$info['Fecha'];
+                }
+
+                $historic = array(
+                    'asesor' => $info['asesor'],
+                    'campo' => $campo,
+                    'old_val' => $oldVal,
+                    'new_val' => json_encode($info),
+                    'changed_by' => $_GET['usid']
+                );
+
+                $this->db->set($historic)->insert('historial_asesores');
+
+                unset($historic['campo']);
+
+                if( isset($cambioFlag) && $cambioFlag == 1 ){
+                    if( $regsByAsesor[$info['asesor']] > 1 ){
+                        $counts = 0;
+                    }else{
+                        switch($tipo){
+                            case 1:
+                            case '1':
+                            case 3:
+                            case '3':
+                                $counts = 0;
+                                break;
+                            default:
+                                $counts = 1;
+                                break;
+                        }
+                    }
+                    $historic['Fecha'] = $info['Fecha'];
+                    $historic['tipo'] = $tipo;
+                    $historic['countAsChange'] = $counts;
+                    $historic['caso'] = $caso;
+                }
+
+
+                $ct = $this->db->set($historic)->get_compiled_insert('asesores_cambioTurno');
+                $query = $ct." ON DUPLICATE KEY UPDATE countAsChange=VALUES(countAsChange), old_val=VALUES(old_val), new_val=VALUES(new_val), tipo=VALUES(tipo), changed_by=VALUES(changed_by), caso=VALUES(caso)";
+                $this->db->query($query);
             }
 
             if( count( $error ) == 0 ){
                 okResponse( count($data).' elemento(s) guardados', 'data', true, $this );
             }else{
                 errResponse( "Error en la base de datos. ".count( $error )." elementos con errores", REST_Controller::HTTP_BAD_REQUEST, $this, 'errores', $errores );
+            }
+        
+            return true;
+    
+        });
+    }
+    
+    public function originalScheds_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+
+            $this->db->select('*')
+                    ->from('asesores_programacion')
+                    ->where_in('asesor', array($data['asesorA'], $data['asesorB']))
+                    ->where_in('Fecha', array($data['dateA'], $data['dateB']))
+                    ->order_by('Fecha');
+            
+            if( $q = $this->db->get() ){
+
+                $h = $this->db->query("SELECT 
+                                    *
+                                FROM
+                                    asesores_cambioTurno
+                                WHERE
+                                    Fecha BETWEEN DATE_ADD(DATE_ADD(LAST_DAY('".$data['dateA']."'),
+                                            INTERVAL 1 DAY),
+                                        INTERVAL - 1 MONTH) AND LAST_DAY('".$data['dateA']."')
+                                    AND countAsChange = 1");
+                
+                okResponse( 'Horarios Originales Obtenidos', 'data', $q->result_array(), $this, 'historic', $h->result_array() );
+            }else{
+                errResponse( "Error en la base de datos.", REST_Controller::HTTP_BAD_REQUEST, $this, 'errores', $this->db->error() );
             }
         
             return true;

@@ -617,6 +617,8 @@ class Cuartiles extends REST_Controller {
                 ->join('dep_asesores b', 'a.asesor=b.asesor AND CURDATE()=b.Fecha', 'left', FALSE)
                 ->where("a.Fecha BETWEEN ", "CAST(CONCAT(YEAR(CURDATE()),'-',MONTH(CURDATE()),'-01') as DATE) AND CURDATE()", FALSE)
                 ->where("supMes", $super)
+                ->where("dep !=",35)
+                ->where("dep !=",5)
                 ->having('vacante IS NOT', ' NULL', FALSE)
                 ->order_by('nombre');
 
