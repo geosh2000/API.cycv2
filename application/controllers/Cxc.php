@@ -609,14 +609,14 @@ class Cxc extends REST_Controller {
       $rev = $this->uri->segment(4);
 
       if( $rev != 1 ){
-        $this->db->select('a.id, b.transactionId, a.localizador, NOMBREASESOR(asesor,1) as asesor, SUM(montoFiscal) as Monto, cxcIdLink, a.status')
+        $this->db->select('a.id, b.transactionId, a.localizador, NOMBREASESOR(asesor,1) as asesor, SUM(montoFiscal) as Monto, cxcIdLink, a.status, a.quincenas as NQ')
           ->from('asesores_cxc a')
           ->join('cxc_transactions b', 'a.id=cxcIdLink', 'left')
           ->where(array('a.localizador' => $localizador))
           ->group_by(array('a.id'))
           ->order_by('fecha_cxc');
       }else{
-        $this->db->select('a.id, a.transactionId, a.Localizador, aplicablePara, montoFiscal, cxcIdLink, COALESCE(status,0) as status')
+        $this->db->select('a.id, a.transactionId, a.Localizador, aplicablePara, montoFiscal, cxcIdLink, COALESCE(status,0) as status, b.quincenas as NQ')
           ->from('cxc_transactions a')
           ->join('asesores_cxc b', 'b.id=cxcIdLink', 'left')
           ->where(array('a.localizador' => $localizador))
@@ -740,7 +740,8 @@ class Cxc extends REST_Controller {
                         'true' AS calculo_normal,
                         'true' AS calculo_finiquito,
                         Localizador AS referencia,
-                        'normal' AS tipo_nomina
+                        'normal' AS tipo_nomina,
+                        replace(replace(replace(replace(replace(replace(UPPER(NOMBREASESOR(b.asesor,4)),'Á','A'),'É','E'),'Í','I'),'Ó','O'),'Ú','U'),'Ñ','N') as Nombre
                     FROM
                         cxc_payTable a
                             LEFT JOIN
@@ -751,6 +752,7 @@ class Cxc extends REST_Controller {
                         dep_asesores dp ON b.asesor=dp.asesor AND dp.Fecha=CURDATE()
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
+                            AND consecutivo = 1
                             AND b.tipo = 0
                             AND dp.$dep";
         
@@ -763,7 +765,8 @@ class Cxc extends REST_Controller {
                         'true' AS calculo_normal,
                         'true' AS calculo_finiquito,
                         Localizador AS referencia,
-                        'normal' AS tipo_nomina
+                        'normal' AS tipo_nomina,
+                        replace(replace(replace(replace(replace(replace(UPPER(NOMBREASESOR(b.asesor,4)),'Á','A'),'É','E'),'Í','I'),'Ó','O'),'Ú','U'),'Ñ','N') as Nombre
                     FROM
                         cxc_payTable a
                             LEFT JOIN
@@ -774,12 +777,13 @@ class Cxc extends REST_Controller {
                         dep_asesores dp ON b.asesor=dp.asesor AND dp.Fecha=CURDATE()
                     WHERE
                         montoParcial > 0 AND payday = '$payday'
+                            AND consecutivo = 1
                             AND b.tipo = 1
                             AND dp.$dep";
         
       $querySALDOS = "SELECT 
                         NOMBREASESOR(b.asesor, 5) AS clave,
-                        UPPER(NOMBREASESOR(b.asesor, 4)) AS Empleado,
+                        replace(replace(replace(replace(replace(replace(UPPER(NOMBREASESOR(b.asesor,4)),'Á','A'),'É','E'),'Í','I'),'Ó','O'),'Ú','U'),'Ñ','N') as Empleado,
                         IF(Egreso > payday,
                             'active',
                             'inactive') AS Estatus_Empleado,
@@ -1269,7 +1273,7 @@ class Cxc extends REST_Controller {
 
       $this->db->select('a.id, a.transactionId, COALESCE(a.Localizador, b.Localizador) as Localizador, dtCreated, montoFiscal, a.monto, currency, aplicablePara, 
                         autorizadoPor, cobradoPor, b.id as cxcIdLink, asesor as asesorID, NOMBREASESOR(asesor,1) as asesor, d.monto as totalCxc, 
-                        status, tipo, firmado, comments, NOMBREASESOR(created_by,1) created_by, 
+                        status, tipo, firmado, b.quincenas as NQ, comments, NOMBREASESOR(created_by,1) created_by, 
                         NOMBREASESOR(updated_by,1) updated_by, regs as posibleLinks')
         ->from('cxc_transactions a')
         ->join('cxcAmount d', 'b.id=d.cxcIdLink', 'left')
@@ -1340,7 +1344,7 @@ class Cxc extends REST_Controller {
 
       $this->db->select('a.id, a.id as cxcIdLink, fecha_cxc as Fecha, a.Localizador, SUM(montoFiscal) as totalCxc, 
                           a.asesor as asesorID, NOMBREASESOR(a.asesor,1) as asesor, NOMBREDEP(dep) as Departamento,
-                          status, tipo, firmado, comments, NOMBREASESOR(created_by,1) created_by, 
+                          status, tipo, firmado, comments, quincenas as NQ, NOMBREASESOR(created_by,1) created_by, 
                         NOMBREASESOR(updated_by,1) updated_by')
         ->from('asesores_cxc a')
         ->join('cxc_transactions b', 'a.id=b.cxcIdLink', 'left')

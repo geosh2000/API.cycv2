@@ -1526,16 +1526,18 @@ public function pyaV2_get(){
 
             $params = $this->put();
 
-            $this->db->select("a.asesor, a.Fecha, b.id, js, je, x1s, x1e, x2s, x2e, cs, ce, NOMBREASESOR(a.asesor, 2) AS Nombre, IF(d.id IS NOT NULL, CASE WHEN c.a = 1 THEN d.Ausentismo WHEN c.b THEN 'Beneficio' WHEN c.d THEN 'Descanso' END,NULL) as aus", FALSE)
-            ->from("dep_asesores a")
+            $this->db->select("y.id as asesor, x.Fecha, b.id, js, je, x1s, x1e, x2s, x2e, cs, ce, NOMBREASESOR(a.asesor, 2) AS Nombre, IF(d.id IS NOT NULL, CASE WHEN c.a = 1 THEN d.Ausentismo WHEN c.b THEN 'Beneficio' WHEN c.d THEN 'Descanso' END,NULL) as aus", FALSE)
+            ->from("Fechas x")
+            ->join("Asesores y", '1=1')
+            ->join("dep_asesores a", 'a.Fecha=x.Fecha AND y.id=a.asesor', 'left')
             ->join("asesores_programacion b", "a.asesor=b.asesor AND a.Fecha=b.Fecha", 'left')
             ->join("asesores_ausentismos c", "a.asesor=c.asesor AND a.Fecha=c.Fecha", 'left')
             ->join("config_tiposAusentismos d", "c.ausentismo=d.id", 'left')
-            ->where_in('a.asesor', $params['asesores'])
-            ->where('a.Fecha >=', $params['inicio'] )
-            ->where('a.Fecha <=', $params['fin'] )
+            ->where_in('y.id', $params['asesores'])
+            ->where('x.Fecha >=', $params['inicio'] )
+            ->where('x.Fecha <=', $params['fin'] )
             ->order_by('Nombre')
-            ->order_by('b.Fecha');
+            ->order_by('x.Fecha');
 
             if( $q = $this->db->get() ){
                 okResponse( 'Programación recibida', 'data', $q->result_array(), $this );
@@ -1697,6 +1699,7 @@ public function pyaV2_get(){
                                     Fecha BETWEEN DATE_ADD(DATE_ADD(LAST_DAY('".$data['dateA']."'),
                                             INTERVAL 1 DAY),
                                         INTERVAL - 1 MONTH) AND LAST_DAY('".$data['dateA']."')
+                                    AND asesor IN (".$data['asesorA'].", ".$data['asesorB'].")
                                     AND countAsChange = 1");
                 
                 okResponse( 'Horarios Originales Obtenidos', 'data', $q->result_array(), $this, 'historic', $h->result_array() );

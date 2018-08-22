@@ -108,6 +108,7 @@ class SolicitudBC extends REST_Controller {
 
   }
 
+  // DEPRECATED
   public function bajaSet_put(){
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
@@ -123,9 +124,24 @@ class SolicitudBC extends REST_Controller {
           $this->db->query("SELECT depAsesores(".$data['id'].",ADDDATE(CURDATE(),180))");
           $result = $this->changeSolicitudStatus($data, 1);
 
-          $q = $this->db->get_where('rrhh_solicitudesCambioBaja', 'id = '.$data['solicitud']);
-          $mailParams = $q->row_array();
-          mailSolicitudBaja::mail( $this, $mailParams, $vac_off['vac_off'], 'set' );
+          $q = $this->db->query("SELECT 
+                                      NOMBREASESOR(a.asesor, 2) AS Nombre,
+                                      NOMBREDEP(dep) AS Departamento,
+                                      dep, operacion,
+                                      NOMBREASESOR(".$_GET['usid'].", 2) AS sol,
+                                      Fecha,
+                                      IF(recontratable = 1, 'SI', 'NO') AS Recontratable,
+                                      IF(c.status = 1, 'SI', 'NO') AS Reemplazable
+                                  FROM
+                                      dep_asesores a
+                                          LEFT JOIN
+                                      asesores_recontratable b ON a.asesor = b.asesor
+                                          LEFT JOIN
+                                      asesores_plazas c ON a.vacante = c.id
+                                  WHERE
+                                      a.asesor = ".$data['id']." AND Fecha = '".$data['fechaBaja']."'");
+          $mailData = $q->row_array();
+          $this->mailing_bajas( $mailData, 1 );
 
           return $result;
         }else{
@@ -341,6 +357,7 @@ class SolicitudBC extends REST_Controller {
     $query = $this->db->update('asesores_plazas');
   }
 
+  // NOT RESTFUL
   public function bajaSolicitud( $data, $usr  ){
 
         $vo = $this->getVacOff( $data['id'] );
@@ -386,11 +403,16 @@ class SolicitudBC extends REST_Controller {
                         "folio"     => $this->db->insert_id()
                       );
 
+                      
+                      
           if($data['tipo'] == 'ask'){
-            mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'ask' );
+            // mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'ask' );
+            $this->mailing_bajas( $data, 0 );
           }else{
-            mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'ask' );
-            mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'set' );
+            $this->mailing_bajas( $data, 0, true );
+            $this->mailing_bajas( $data, 1 );
+            // mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'ask' );
+            // mailSolicitudBaja::mail( $this, $insert, $vo['vac_off'], 'set' );
           }
 
 
@@ -408,6 +430,7 @@ class SolicitudBC extends REST_Controller {
 
   }
 
+  // NOT RESTFUL
   public function bajaSet( $data ){
 
       // SET OUT
@@ -1304,5 +1327,138 @@ class SolicitudBC extends REST_Controller {
       $mail = new Mailing();  //create object 
       $mail->bajaSolicitud( $asesor, $_GET['usid'], $fecha, $reemp, $recont ); //call function
     }
+
+    // MAILING FUNCTIONS
+    private function countReturn($q, $msg, $err = false){
+      if( $q->num_rows() == 0 ){
+          if( $err ){
+              errResponse($msg, REST_Controller::HTTP_BAD_REQUEST, $this, 'error', false);
+          }else{
+              okResponse($msg, 'data', true, $this);
+          }
+      }
+  }
+  
+  private function sendMail( $titulo, $user, $tipo, $body ){
+      $msg = mailingV2::msg_encapsule($titulo, $body);
+          
+      if( mailingV2::send($user, $titulo, $msg) ){
+          $this->db->query("INSERT INTO mail_dailyCheck VALUES (NULL, '$tipo', CURDATE(), '$user', 1, NULL) ON DUPLICATE KEY UPDATE sent = 1");    
+      }else{
+          $this->db->query("INSERT INTO mail_dailyCheck VALUES (NULL, '$tipo', CURDATE(), '$user', 0, NULL) ON DUPLICATE KEY UPDATE sent = 0");
+      }
+  }
+  
+  private function getMailList( $tipo ){
+      $mailQ = $this->db->query("SELECT 
+                                      a.*, NOMBREASESOR(asesor_id, 1) AS Nombre, sent
+                                  FROM
+                                      mail_lists a
+                                          LEFT JOIN
+                                      userDB b ON a.usuario = b.username
+                                          LEFT JOIN
+                                      mail_dailyCheck c ON a.usuario = c.user
+                                          AND c.Fecha = CURDATE()
+                                          AND a.notif = c.tipo
+                                  WHERE
+                                      notif = '$tipo'
+                                          AND COALESCE(sent, 0) = 0");
+      
+      $this->countReturn($mailQ, 'Sin mails pendientes');
+      return $mailQ->result_array();
+      
+  }
+  
+  private function getMailListNV( $tipo ){
+      $mailQ = $this->db->query("SELECT 
+                                      a.*, NOMBREASESOR(asesor_id, 1) AS Nombre
+                                  FROM
+                                      mail_lists a
+                                          LEFT JOIN
+                                      userDB b ON a.usuario = b.username
+                                  WHERE
+                                      notif = '$tipo'");
+      
+      $this->countReturn($mailQ, 'Sin mails configurados para tipo \'$tipo\'');
+      return $mailQ->result_array();
+  }
+  
+  public function mailing_bajas( $mailData, $tipo, $auto = false ){
+
+      $q = $this->db->query("SELECT 
+                              NOMBREASESOR(a.asesor, 2) AS Nombre,
+                              NOMBREDEP(dep) AS Departamento,
+                              dep, operacion,
+                              NOMBREASESOR(".$_GET['usid'].", 2) AS sol,
+                              Fecha,
+                              IF(recontratable = 1, 'SI', 'NO') AS Recontratable,
+                              IF(c.status = 1, 'SI', 'NO') AS Reemplazable
+                          FROM
+                              dep_asesores a
+                                  LEFT JOIN
+                              asesores_recontratable b ON a.asesor = b.asesor
+                                  LEFT JOIN
+                              asesores_plazas c ON a.vacante = c.id
+                          WHERE
+                              a.asesor = ".$mailData['id']." AND Fecha = '".$mailData['fechaBaja']."'");
+      $data = $q->row_array();
+    
+      if( $tipo = 1 ){
+        $list = "bajaOK_";
+        $titulo = "Baja Procesada para ".$data['Nombre'];
+        $tipoSol = "Autorizado por";
+      }else{
+        $list = "bajaSOL_";
+        $titulo = "Baja solicitada para ".$data['Nombre'];
+        $tipoSol = "Solicitado por";
+      }
+
+      if( $auto ){
+        $sol = "Generada automáticamente por baja directa en RRHH";
+      }else{
+        $sol = $data['sol'];
+      }
+
+      $mails = $this->getMailList( $list.$data['operacion'] );
+      
+      $body = "<div><table style='text-align: left'>\n
+      <tr><th style='padding: 5px; border: 1px solid #d5d3d3;'>Nombre</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>Departamento</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>$tipoSol</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>Fecha Baja</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>Comentarios</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>Reemplazable</th>
+      <th style='padding: 5px; border: 1px solid #d5d3d3;'>Recontratable</th></tr>\n";
+      
+      $body .= "<tr><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$data['Nombre']."</td>
+                    <td style='padding: 5px; border: 1px solid #d5d3d3;'>".$data['Departamento']."</td>
+                    <td style='padding: 5px; border: 1px solid #d5d3d3;'>".$sol."</td>
+                    <td style='text-align: center; padding: 5px; border: 1px solid #d5d3d3;'>".$data['Fecha']."</td>
+                    <td style='text-align: center; padding: 5px; border: 1px solid #d5d3d3;'>".$mailData['comentarios']."</td>
+                    <td style='text-align: center; padding: 5px; border: 1px solid #d5d3d3;'>".$data['Reemplazable']."</td>
+                    <td style='text-align: center; padding: 5px; border: 1px solid #d5d3d3;'>".$data['Recontratable']."</td></tr>\n";
+
+      
+      $body .= "</table></div><br>\n";
+
+      $flag = false;
+      
+      foreach( $mails as $index => $info ){
+          if( $info['usuario'] == $_GET['usn'] ){
+            $flag = true;
+          }
+          $text = '';
+          $text = "<p>Hola ".$info['Nombre'].",</p><p>La siguiente baja se ha procesado correctamente:</p>".$body;
+          $this->sendMail($titulo, $info['usuario'], 'bajaOK - '.$data['Nombre'], $text);
+      }
+
+      if( !$flag ){
+        $text = '';
+        $text = "<p>¡Hola!</p><p>La siguiente baja se ha procesado correctamente:</p>".$body;
+        $this->sendMail($titulo,  $_GET['usn'], 'bajaOK - '.$data['Nombre'], $text);
+      }
+      
+      return true;
+  }  
 
 }
