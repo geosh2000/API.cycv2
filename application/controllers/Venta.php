@@ -313,6 +313,126 @@ class Venta extends REST_Controller {
 
     }
 
+    public function getVentaPorPDV_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            // ======================================================================
+            // START Get Inputs
+            // ======================================================================
+                $start = $this->uri->segment(3);
+                $end = $this->uri->segment(4);
+                $sv = $this->uri->segment(5);
+                $pq = $this->uri->segment(6);
+            // ======================================================================
+            // END Get Inputs
+            // ======================================================================
+            
+            // ======================================================================
+            // START Parameters
+            // ======================================================================
+                $isPaq = $pq == 'true' ? "WHEN isPaq != 0 THEN 'Paquete'" : "";
+            // ======================================================================
+            // END Parameters
+            // ======================================================================
+                
+            // ======================================================================
+            // START Venta Query
+            // ======================================================================
+            if($sv == 1){
+                $qSV = "COALESCE(SUM(IF((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0,
+                        Monto,
+                        0)),0) AS Monto,
+                        COALESCE(SUM(IF(producto = 'Paquete' AND ((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0), Monto, 0)),0) as MontoPaquete,
+                        COALESCE(SUM(IF(producto = 'Hotel' AND ((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0), Monto, 0)),0) as MontoHotel,
+                        COALESCE(SUM(IF(producto = 'Vuelo' AND ((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0), Monto, 0)),0) as MontoVuelo,
+                        COALESCE(SUM(IF(producto = 'Otros' AND ((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0), Monto, 0)),0) as MontoOtros,
+                        COALESCE(SUM(IF(((NewLoc IS NULL AND Monto > 0)
+                            OR Monto > 0) AND gpoCanalKpi = 'PDV',
+                        Monto,
+                        0)),0) AS MontoShop,
+                        COALESCE(SUM(IF(((NewLoc IS NULL AND Monto > 0)
+                        OR Monto > 0) AND gpoCanalKpi != 'PDV',
+                        Monto,
+                        0)),0) AS MontoOtrosCanales";
+            }else{
+                $qSV = "COALESCE(SUM(Monto),0) as Monto,
+                        COALESCE(SUM(IF(producto = 'Paquete', Monto, 0)),0) as MontoPaquete,
+                        COALESCE(SUM(IF(producto = 'Hotel', Monto, 0)),0) as MontoHotel,
+                        COALESCE(SUM(IF(producto = 'Vuelo', Monto, 0)),0) as MontoVuelo,
+                        COALESCE(SUM(IF(producto = 'Otros', Monto, 0)),0) as MontoOtros,
+                        COALESCE(SUM(IF(gpoCanalKpi = 'PDV', Monto, 0)),0) as MontoShop,
+                        COALESCE(SUM(IF(gpoCanalKpi != 'PDV', Monto, 0)),0) as MontoOtrosCanales";
+            }
+
+            $table = venta_help::base($this, $start, $end, true, 'MX', true, false, false);
+
+            if( $pq == 'true' ){
+                $this->db->select("IF(itemLocatorIdParent != '', 'Paquete', 
+                                CASE 
+                                    WHEN servicio = 'Hotel' THEN servicio 
+                                    WHEN servicio = 'Vuelo' THEN servicio
+                                    ELSE 'Otros'
+                                END) as producto", FALSE);
+            }else{
+                $this->db->select("CASE 
+                                    WHEN servicio = 'Hotel' THEN servicio 
+                                    WHEN servicio = 'Vuelo' THEN servicio
+                                    ELSE 'Otros'
+                                END as producto", FALSE);
+            }
+
+            $this->db->select("Fecha, branchid, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, NewLoc, gpoCanalKpi", FALSE)
+                        ->from("base a")
+                        ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
+                        ->group_by('Fecha, branchid, Localizador, item');
+            $okQ = $this->db->get_compiled_select();
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS tmpItems");
+            $this->db->query("CREATE TEMPORARY TABLE tmpItems $okQ");
+
+            $this->db->select("Fecha,
+                                PDV, TRIM(displayNameShort) as PdvName, TRIM(cityForListing) as Ciudad")
+                    ->select("FINDSUPERDAYPDV(Fecha, b.id, 1) as Supervisor")
+                    ->select("COALESCE(COUNT(DISTINCT NewLoc),0) AS Localizadores,
+                                COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Hotel' THEN NewLoc END),0) as LocalizadoresHotel,
+                                COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Vuelo' THEN NewLoc END),0) as LocalizadoresVuelo,
+                                COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Paquete' THEN NewLoc END),0) as LocalizadoresPaquete,
+                                COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Otros' THEN NewLoc END),0) as LocalizadoresOtros", FALSE)
+                    ->select($qSV, FALSE)
+                    ->from("tmpItems a")
+                    ->join('PDVs b', 'a.branchid = b.branchid', 'left')
+                    ->join('cat_branch c', 'a.branchid = c.branchid', 'left')
+                    ->group_by('Fecha, PDV')
+                    ->having('PdvName !=', 'home')
+                    ->order_by('Fecha, PdvName');
+
+            if($q = $this->db->get()){
+                $result = $q->result_array();
+
+                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                $luR = $luQ->row_array();
+                $lu = $luR['lu'];
+
+                okResponse( 'Data obtenida', 'data', $result, $this, 'lu', $lu );
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+
+
+        });
+
+        jsonPrint( $result );
+
+    }
+
     public function getRN_post(){
 
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){

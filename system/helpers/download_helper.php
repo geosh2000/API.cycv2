@@ -84,7 +84,7 @@ if ( ! function_exists('force_download'))
 		}
 
 		// Set the default MIME type to send
-		$mime = 'application/octet-stream';
+		$mime = 'application/vnd.ms-excel';
 
 		$x = explode('.', $filename);
 		$extension = end($x);

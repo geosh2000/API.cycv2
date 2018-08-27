@@ -339,11 +339,10 @@ class Asesores extends REST_Controller {
                             'asesor'  => $data['id'],
                             'campo'   => $column,
                             'old_val' => $old[$column],
-                            'new_val' => $info
+                            'new_val' => $info,
+                            'changed_by' => $_GET['usid']
                           );
 
-            $this->db->set( array('changed_by' => "GETIDASESOR(".$_GET['usn'].",2)"), FALSE )
-                    ->set( array('date'=> "NOW()"), FALSE );
 
             if( !$this->db->insert('historial_asesores', $update) ){
               errResponse('Error al actualizar data personal '.$column.' del asesor '.$asesor, REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());

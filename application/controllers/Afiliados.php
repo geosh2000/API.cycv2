@@ -121,17 +121,18 @@ class Afiliados extends REST_Controller {
                                 IF(SUM(LocsOnline) = 0, 0, SUM(MontoOnline) / SUM(LocsOnline)) as AvTktOnline,
                                 IF(SUM(LocsCC) = 0, 0, SUM(MontoCC) / SUM(LocsCC)) as AvTktCC,
                                 IF(SUM(LocsAll) = 0, 0, SUM(MontoAll) / SUM(LocsAll)) as AvTktAll,
-                                IF(SUM(Llamadas) = 0, 0, SUM(LocsIn) / SUM(Llamadas)) as FC,
+                                IF(SUM(Contestadas) = 0, 0, SUM(LocsIn) / SUM(Contestadas)) as FC,
                                 SUM(Llamadas) as Llamadas,
-                                SUM(Llamadas_all) as Llamadas_all,
+                                SUM(Contestadas) as Contestadas,
+                                SUM(Contestadas_all) as Contestadas_all,
                                 SUM(Abandonadas) as Abandonadas,
-                                IF(SUM(Llamadas_all) = 0, 0, SUM(Abandonadas) / SUM(Llamadas_all)) as Abandon,
+                                IF(SUM(Llamadas) = 0, 0, SUM(Abandonadas) / SUM(Llamadas)) as Abandon,
                                 SUM(Sla_Calls) as Sla_Calls,
-                                IF(SUM(Llamadas_all) = 0, 0, SUM(Sla_Calls) / SUM(Llamadas_all)) as SLA,
+                                IF(SUM(Llamadas) = 0, 0, SUM(Sla_Calls) / SUM(Llamadas)) as SLA,
                                 SUM(Total_Espera) as Total_Espera,
-                                IF(SUM(Llamadas_all) - SUM(Abandonadas) = 0, 0, SUM(Total_Espera) / (SUM(Llamadas_all) - SUM(Abandonadas))) as ASA,
+                                IF(SUM(Contestadas_all) = 0, 0, SUM(Total_Espera) / (SUM(Contestadas_all))) as ASA,
                                 SUM(TT) as TT,
-                                IF(SUM(Llamadas_all) - SUM(Abandonadas) = 0, 0, SUM(TT) / (SUM(Llamadas_all) - SUM(Abandonadas))) as AHT
+                                IF(SUM(Contestadas_all) = 0, 0, SUM(TT) / (SUM(Contestadas_all))) as AHT
                             FROM result";
 
         // ===============================================================
@@ -205,12 +206,13 @@ class Afiliados extends REST_Controller {
     $this->db->query("CREATE TEMPORARY TABLE afCalls
     SELECT 
         Fecha,
+        COUNT(*) as Ofrecidas,
         COUNT(IF(Answered = 1
                 AND NOT (Desconexion = 'Transferida'
                 AND Duracion_Real < '02:00:00'),
             ac_id,
-            NULL)) AS Llamadas,
-        COUNT(IF(Answered = 1, ac_id,NULL)) AS Llamadas_all,
+            NULL)) AS Contestadas,
+        COUNT(IF(Answered = 1, ac_id,NULL)) AS Contestadas_all,
         COUNT(IF(Answered = 0,ac_id,NULL)) as Abandonadas,
         COUNT(IF(Answered = 1 AND Espera <'00:00:".$params['tat']."',ac_id,NULL)) as Sla_Calls,
         SUM(IF(Answered = 1, TIME_TO_SEC(Espera), 0)) as Total_Espera,
@@ -240,17 +242,18 @@ class Afiliados extends REST_Controller {
         IF(COALESCE(LocsOnline,0) = 0, 0, COALESCE(MontoOnline,0) / COALESCE(LocsOnline,0)) AS AvTktOnline,
         IF((COALESCE(LocsIn,0) + COALESCE(LocsOut,0)) = 0, 0, (COALESCE(MontoOut,0) + COALESCE(MontoIn,0)) / (COALESCE(LocsIn,0) + COALESCE(LocsOut,0))) AS AvTktCC,
         IF((COALESCE(LocsIn,0) + COALESCE(LocsOut,0) + COALESCE(LocsOnline,0)) = 0, 0, (COALESCE(MontoOut,0) + COALESCE(MontoIn,0) + COALESCE(MontoOnline,0)) / (COALESCE(LocsIn,0) + COALESCE(LocsOut,0) + COALESCE(LocsOnline,0))) AS AvTktAll,
-        IF((COALESCE(Llamadas,0)-COALESCE(Abandonadas,0)) = 0, 0, COALESCE(LocsIn,0) / (COALESCE(Llamadas,0)-COALESCE(Abandonadas,0))) AS FC,
-        COALESCE(Llamadas,0) as Llamadas,
-        COALESCE(Llamadas_all,0) as Llamadas_all,
+        IF(COALESCE(Contestadas_all,0) = 0, 0, COALESCE(LocsIn,0) / COALESCE(Contestadas_all,0)) AS FC,
+        COALESCE(Ofrecidas,0) as Llamadas,
+        COALESCE(Contestadas,0) as Contestadas,
+        COALESCE(Contestadas_all,0) as Contestadas_all,
         COALESCE(Abandonadas,0) as Abandonadas,
-        IF(COALESCE(Llamadas_all,0) = 0,0,COALESCE(Abandonadas,0) / COALESCE(Llamadas_all,0)) as Abandon,
+        IF(COALESCE(Ofrecidas,0) = 0,0,COALESCE(Abandonadas,0) / COALESCE(Ofrecidas,0)) as Abandon,
         COALESCE(Sla_Calls,0) as Sla_Calls,
-        IF(COALESCE(Llamadas_all,0) = 0,0,COALESCE(Sla_Calls,0) / COALESCE(Llamadas_all,0)) AS SLA,
+        IF(COALESCE(Ofrecidas,0) = 0,0,COALESCE(Sla_Calls,0) / COALESCE(Ofrecidas,0)) AS SLA,
         COALESCE(Total_Espera,0) as Total_Espera,
-        IF(COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0) = 0,0,COALESCE(Total_Espera,0) / (COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0))) AS ASA,
+        IF(COALESCE(Contestadas_all,0) = 0,0,COALESCE(Total_Espera,0) / (COALESCE(Contestadas_all,0))) AS ASA,
         COALESCE(TT,0) as TT,
-        IF(COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0) = 0,0,COALESCE(TT,0) / (COALESCE(Llamadas_all,0) - COALESCE(Abandonadas,0))) AS AHT
+        IF(COALESCE(Contestadas_all,0) = 0,0,COALESCE(TT,0) / (COALESCE(Contestadas_all,0))) AS AHT
     FROM
         (SELECT 
             *

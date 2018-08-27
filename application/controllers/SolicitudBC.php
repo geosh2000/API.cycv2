@@ -1400,17 +1400,19 @@ class SolicitudBC extends REST_Controller {
                                   LEFT JOIN
                               asesores_plazas c ON a.vacante = c.id
                           WHERE
-                              a.asesor = ".$mailData['id']." AND Fecha = '".$mailData['fechaBaja']."'");
+                              a.asesor = ".$mailData['id']." AND Fecha = '".$mailData['fechaLiberacion']."'");
       $data = $q->row_array();
     
-      if( $tipo = 1 ){
+      if( $tipo == 1 ){
         $list = "bajaOK_";
         $titulo = "Baja Procesada para ".$data['Nombre'];
         $tipoSol = "Autorizado por";
+        $greet = "procesado correctamente";
       }else{
         $list = "bajaSOL_";
         $titulo = "Baja solicitada para ".$data['Nombre'];
         $tipoSol = "Solicitado por";
+        $greet = "solicitado";
       }
 
       if( $auto ){
@@ -1448,13 +1450,13 @@ class SolicitudBC extends REST_Controller {
             $flag = true;
           }
           $text = '';
-          $text = "<p>Hola ".$info['Nombre'].",</p><p>La siguiente baja se ha procesado correctamente:</p>".$body;
+          $text = "<p>Hola ".$info['Nombre'].",</p><p>La siguiente baja se ha $greet:</p>".$body;
           $this->sendMail($titulo, $info['usuario'], 'bajaOK - '.$data['Nombre'], $text);
       }
 
       if( !$flag ){
         $text = '';
-        $text = "<p>¡Hola!</p><p>La siguiente baja se ha procesado correctamente:</p>".$body;
+        $text = "<p>¡Hola!</p><p>La siguiente baja se ha $greet:</p>".$body;
         $this->sendMail($titulo,  $_GET['usn'], 'bajaOK - '.$data['Nombre'], $text);
       }
       
