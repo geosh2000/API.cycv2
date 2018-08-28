@@ -324,16 +324,10 @@ class Venta extends REST_Controller {
                 $end = $this->uri->segment(4);
                 $sv = $this->uri->segment(5);
                 $pq = $this->uri->segment(6);
+                $asesor = $this->uri->segment(7);
+                $total = $this->uri->segment(8);
             // ======================================================================
             // END Get Inputs
-            // ======================================================================
-            
-            // ======================================================================
-            // START Parameters
-            // ======================================================================
-                $isPaq = $pq == 'true' ? "WHEN isPaq != 0 THEN 'Paquete'" : "";
-            // ======================================================================
-            // END Parameters
             // ======================================================================
                 
             // ======================================================================
@@ -387,39 +381,107 @@ class Venta extends REST_Controller {
                                 END as producto", FALSE);
             }
 
-            $this->db->select("Fecha, branchid, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, NewLoc, gpoCanalKpi", FALSE)
+            $this->db->select("Fecha, branchid, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, NewLoc, gpoCanalKpi, asesor", FALSE)
                         ->from("base a")
                         ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
                         ->group_by('Fecha, branchid, Localizador, item');
+            
+            if( $asesor == 1 ){
+                $this->db->where('dep', 29);
+            }
             $okQ = $this->db->get_compiled_select();
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS tmpItems");
             $this->db->query("CREATE TEMPORARY TABLE tmpItems $okQ");
 
-            $this->db->select("Fecha,
-                                PDV, TRIM(displayNameShort) as PdvName, TRIM(cityForListing) as Ciudad")
-                    ->select("FINDSUPERDAYPDV(Fecha, b.id, 1) as Supervisor")
+            $this->db->select("a.Fecha as FechaQ, branchid as branchidQ, asesor as asesorQ")
                     ->select("COALESCE(COUNT(DISTINCT NewLoc),0) AS Localizadores,
                                 COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Hotel' THEN NewLoc END),0) as LocalizadoresHotel,
                                 COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Vuelo' THEN NewLoc END),0) as LocalizadoresVuelo,
                                 COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Paquete' THEN NewLoc END),0) as LocalizadoresPaquete,
                                 COALESCE(COUNT(DISTINCT CASE WHEN producto = 'Otros' THEN NewLoc END),0) as LocalizadoresOtros", FALSE)
                     ->select($qSV, FALSE)
-                    ->from("tmpItems a")
-                    ->join('PDVs b', 'a.branchid = b.branchid', 'left')
-                    ->join('cat_branch c', 'a.branchid = c.branchid', 'left')
-                    ->group_by('Fecha, PDV')
-                    ->having('PdvName !=', 'home')
-                    ->order_by('Fecha, PdvName');
+                    ->from("tmpItems a");
+                    
+            if( $asesor == 1 ){
+                $this->db->group_by('asesor');
+            }else{
+                $this->db->group_by('branchidQ');
+            }
 
-            if($q = $this->db->get()){
-                $result = $q->result_array();
+            if( $total != 1 ){ 
+                $this->db->group_by('a.Fecha'); 
+            }
 
-                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
-                $luR = $luQ->row_array();
-                $lu = $luR['lu'];
+            if($query = $this->db->get_compiled_select()){
 
-                okResponse( 'Data obtenida', 'data', $result, $this, 'lu', $lu );
+                if($asesor == 1){
+                    $this->db->select("a.Fecha, asesor, NOMBREASESOR(asesor,2) as Nombre, TRIM(m.Ciudad) as Ciudad, FINDSUPERDAYPDV(a.Fecha, b.oficina, 1) as Supervisor", FALSE)
+                            ->from("Fechas a")
+                            ->join("dep_asesores b", "a.Fecha=b.Fecha", "left")
+                            ->join("asesores_plazas p", "b.vacante=p.id", "left")
+                            ->join("db_municipios m", "p.ciudad = m.id", "left")
+                            ->where('a.Fecha BETWEEN ', "'$start' AND '$end'", FALSE)
+                            ->where('dep', 29)
+                            ->where('vacante IS NOT ', "NULL", FALSE);
+                }else{
+                    $this->db->select("Fecha, b.branchId, TRIM(cityForListing) as Ciudad, name as PDV, TRIM(displayNameShort) as PdvName, FINDSUPERDAYPDV(a.Fecha, c.id, 1) as Supervisor", FALSE)
+                            ->from("Fechas a")
+                            ->join('cat_branch b', '1=1')
+                            ->join('PDVs c', 'b.branchid=c.branchid', 'left')
+                            ->where('Fecha BETWEEN ', "'$start' AND '$end'", FALSE)
+                            ->where('isActive', 1)
+                            ->where('name LIKE ', "'MX%'", FALSE)
+                            ->where('displayNameShort !=', "home");
+                }
+
+                $join = "a.Fecha = FechaQ AND";
+                $order = "Fecha, ";
+                $totDisp = 0;
+
+                if( $total == 1 ){
+                    if( $asesor == 1 ){
+                        $this->db->group_by('asesor');
+                    }else{
+                        $this->db->group_by('b.branchId');
+                    }
+
+                    $join = "";
+                    $order = "";
+                    $totDisp = 1;
+                }
+
+                $all = $this->db->get_compiled_select();
+
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS q");
+                $this->db->query("CREATE TEMPORARY TABLE q $query");
+                $this->db->query("DROP TEMPORARY TABLE IF EXISTS f");
+                $this->db->query("CREATE TEMPORARY TABLE f $all");
+
+                $this->db->select("*, $totDisp as Total")
+                        ->from('f a');
+
+                if($asesor == 1){
+                    $this->db->join('q b', "$join a.asesor = asesorQ", 'left')
+                    ->order_by("$order Nombre");
+                }else{
+                    $this->db->join('q b', "$join a.branchId = branchidQ", 'left')
+                    ->order_by("$order PdvName");
+                }
+                
+                if($q = $this->db->get()){
+                    $result = $q->result_array();
+
+                    $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                    $luR = $luQ->row_array();
+                    $lu = $luR['lu'];
+
+                    okResponse( 'Data obtenida', 'data', $result, $this, 'lu', $lu );
+                }else{
+                    errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+                }
+
+                
             }else{
                 errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
             }
