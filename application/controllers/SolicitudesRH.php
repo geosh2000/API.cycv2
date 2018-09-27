@@ -45,7 +45,7 @@ class SolicitudesRH extends REST_Controller {
                                 LEFT JOIN
                             PDVs c ON a.oficina = c.id
                                 LEFT JOIN
-                            db_municipios d ON a.ciudad = d.id
+                                cat_zones d ON a.ciudad = d.id
                             WHERE
                               a.status=0 AND a.Activo=1");
       $query = "SELECT * FROM relPuestos";
@@ -107,7 +107,7 @@ class SolicitudesRH extends REST_Controller {
                                 LEFT JOIN
                             PDVs c ON a.oficina = c.id
                                 LEFT JOIN
-                            db_municipios d ON a.ciudad = d.id");
+                                cat_zones d ON a.ciudad = d.id");
       $this->db->query("CREATE TEMPORARY TABLE relPuestosB SELECT * FROM relPuestos");
 
       $query = "SELECT

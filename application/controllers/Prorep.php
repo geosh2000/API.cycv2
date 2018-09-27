@@ -63,18 +63,16 @@ class Prorep extends REST_Controller {
                             tipoCanal,
                             marca,
                             pais,
-                            c.branchId as branch_id,
-                            c.name,
-                            c.cityForListing as Localidad,
-                            c.outlet,
+                            p.branchid as branch_id,
+                            p.PDV as name,
+                            p.cityForListing as Localidad,
+                            p.outlet,
                             tipoRsva,
                             gpoTipoRsva, a.Servicios
                         FROM
                             allLocs a
                                 LEFT JOIN
                             chanGroups b ON a.chanId = b.id
-                                LEFT JOIN
-                            cat_branch c ON a.branchId = c.branchId
                                 LEFT JOIN
                             PDVs p ON a.branchId = p.branchId
                                 LEFT JOIN

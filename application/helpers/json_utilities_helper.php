@@ -65,9 +65,4 @@ function generateToken( $payload, $key ){
 
 
 
-//
-// require( APPPATH.'/libraries/REST_Controller.php');
-// use Restserver\Libraries\REST_Controller;
-
-
 ?>

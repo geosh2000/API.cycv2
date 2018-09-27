@@ -482,31 +482,8 @@ class VentaMonitor extends REST_Controller {
             $hQ = "";
         }
         
-        if( $hoy['today'] == 1 ){
-            $query = "CREATE TEMPORARY TABLE calls SELECT 
-                            IF(callLen IS NULL,
-                                'Abandono',
-                                'Answered') AS Desconexion,
-                            `from` as Llamante,
-                            CONCAT(IF( SUBSTRING(dnis,1,1) = '0', \"'\", \"\"),dnis) AS DNIS,
-                            Skill, direction,
-                            Cola,
-                            ivr AS IVR_path,
-                            GETIDASESOR(descr_agente, 2) AS asesor,
-                            CAST(tstEnter AS DATE) AS Fecha,
-                            CAST(tstEnter AS TIME) AS Hora, SEC_TO_TIME(callLen) as Duracion
-                        FROM
-                            ccexporter.callsDetails a
-                                LEFT JOIN
-                            Cola_Skill b ON a.queue = b.queue AND b.active=1
-                                LEFT JOIN
-                            ccexporter.agentDetails c ON a.agent = nome_agente
-                        WHERE
-                            tstEnter >= CURDATE() 
-                        HAVING Skill = $skill $direction $hQ";
-        }else{
-            $query = "CREATE TEMPORARY TABLE calls SELECT a.*, Skill, direction FROM t_Answered_Calls a LEFT JOIN Cola_Skill b ON a.Cola=b.Cola AND b.active=1 WHERE Fecha BETWEEN '$fecha' AND '$fechaEnd' HAVING Skill=$skill $direction $hQ";
-        }
+        $query = "CREATE TEMPORARY TABLE calls SELECT a.*, Skill, direction FROM t_Answered_Calls a LEFT JOIN Cola_Skill b ON a.Cola=b.Cola AND b.active=1 WHERE Fecha BETWEEN '$fecha' AND '$fechaEnd' HAVING Skill=$skill $direction $hQ";
+        
      
         $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
         $this->db->query("DROP TEMPORARY TABLE IF EXISTS callsDep");

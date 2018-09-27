@@ -113,7 +113,7 @@ class Headcount extends REST_Controller {
   public function listPdvs_get(){
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
-        $q = $this->db->query("SELECT a.id, CONCAT('(',b.Ciudad,') ',PDV) as name, b.id as ciudad FROM PDVs a LEFT JOIN db_municipios b ON a.ciudad=b.id WHERE Activo=1 AND (PDV LIKE '%MX%' OR PDV LIKE '%GENERAL%') AND PDV NOT LIKE '%y-outlet%' AND b.Ciudad IS NOT NULL ORDER BY b.Ciudad, PDV");
+        $q = $this->db->query("SELECT a.id, CONCAT('(',b.Ciudad,') ',PDV) as name, b.id as ciudad FROM PDVs a LEFT JOIN cat_zones b ON a.ciudad=b.id WHERE Activo=1 AND (PDV LIKE '%MX%' OR PDV LIKE '%GENERAL%') AND PDV NOT LIKE '%y-outlet%' AND b.Ciudad IS NOT NULL ORDER BY b.Ciudad, PDV");
 
         $result = array(
                         "status"    => true,
@@ -171,23 +171,23 @@ class Headcount extends REST_Controller {
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
-      $cleanData = $this->put();
+        $cleanData = $this->put();
 
         $insert = array(
-                        'main_dep'  => 1,
-                        'hc_dep'    => $cleanData['alias']['dep_id'],
-                        'hc_puesto' => $cleanData['alias']['id'],
-                        'departamento' => $cleanData['alias']['pcrc'],
-                        'puesto'    => $cleanData['alias']['alias_id'],
-                        'oficina'   => $cleanData['oficina']['id'],
-                        'ciudad'    => $cleanData['oficina']['ciudad'],
+                        'main_dep'  => $cleanData['main'],
+                        'hc_dep'    => $cleanData['departamento'],
+                        'hc_puesto' => $cleanData['puesto'],
+                        'departamento' => $cleanData['dep'],
+                        'puesto'    => $cleanData['alias'],
+                        'oficina'   => $cleanData['oficina'],
+                        'ciudad'    => $cleanData['ciudad'],
                         'inicio'    => $cleanData['inicio'],
                         'fin'       => $cleanData['fin'],
                         'esquema'   => $cleanData['esquema'],
                         'comentarios'  => $cleanData['comentarios'],
                         'Activo'    => 1,
                         'Status'    => 0,
-                        'created_by'   => $cleanData['creador']
+                        'created_by'   => $_GET['usid']
                       );
 
         if($cleanData['fin'] == null){
@@ -283,7 +283,7 @@ class Headcount extends REST_Controller {
                 ->join('(SELECT * FROM cdPuestos GROUP BY puestoID) b', 'a.hc_puesto = b.puestoID', 'LEFT')
                 ->join('dep_asesores c', 'a.id = c.vacante AND c.Fecha = CURDATE()', 'LEFT')
                 ->join('PDVs d', 'a.oficina = d.id', 'LEFT')
-                ->join('db_municipios e', 'a.ciudad = e.id', 'LEFT')
+                ->join('cat_zones e', 'a.ciudad = e.id', 'LEFT')
                 ->join('PCRCs_puestos f', 'a.puesto = f.id', 'LEFT')
                 ->join('Asesores g', 'c.asesor = g.id', 'LEFT')
                 ->where($params)
@@ -708,7 +708,7 @@ class Headcount extends REST_Controller {
                     LEFT JOIN
                 PDVs pdv ON pl.oficina = pdv.id
                     LEFT JOIN
-                db_municipios cd ON pl.ciudad = cd.id
+                cat_zones cd ON pl.ciudad = cd.id
                     LEFT JOIN
                 dep_asesores das ON pl.id = das.vacante
                     AND das.Fecha = CURDATE()
@@ -754,6 +754,403 @@ class Headcount extends REST_Controller {
       }
       
     });
+  }
+
+  public $hcQuery = "SELECT 
+                      ap.id,
+                      md.nombre AS mainDep,
+                      udn.nombre AS udn,
+                      a.nombre AS area,
+                      d.nombre AS dep,
+                      p.nombre AS puesto,
+                      pr.Puesto AS copc,
+                      PDV, mn.Ciudad,
+                      inicio, fin, ap.esquema, ap.comentarios,
+                      NOMBREASESOR(approbed_by,1) as aprobadaPor, date_approbed,
+                      CONCAT(md.clave, md.id) as mainDepId,
+                      CONCAT(udn.clave, udn.id) as udnId,
+                      CONCAT(a.clave, a.id) as areaId,
+                      CONCAT(d.clave, d.id) as depId,
+                      CONCAT(p.clave, p.id) as puestoId,
+                      CONCAT(pr.id, p.id) as copcId,
+                      md.clave AS mainDepClave,
+                      udn.clave AS udnClave,
+                      a.clave AS areaClave,
+                      d.clave AS depClave,
+                      p.clave AS puestoClave,
+                      NOMBREASESOR(dp.asesor,2) as NombreAsesor,
+                      fechaLiberacionVacante(ap.id) as ultimaLiberacion
+                    FROM
+                      asesores_plazas ap
+                          LEFT JOIN
+                      hc_codigos_Puesto p ON ap.hc_puesto = p.id
+                          LEFT JOIN
+                      hc_codigos_Departamento d ON p.departamento = d.id
+                          LEFT JOIN
+                      hc_codigos_Areas a ON d.area = a.id
+                          LEFT JOIN
+                      hc_codigos_UnidadDeNegocio udn ON a.unidadDeNegocio = udn.id
+                          LEFT JOIN
+                      hc_mainDep md ON udn.mainDepId = md.id
+                          LEFT JOIN 
+                      PCRCs_puestos pr ON pr.id=ap.puesto
+                          LEFT JOIN
+                      dep_asesores dp ON ap.id = dp.vacante
+                          AND dp.Fecha = ADDDATE(CURDATE(),15)
+                          LEFT JOIN
+                      PDVs pdv ON ap.oficina=pdv.id
+                          LEFT JOIN
+                          cat_zones mn ON ap.ciudad=mn.id
+                    WHERE
+                      ap.Activo = 1 AND ap.Status=1 AND ap.fin>CURDATE() AND ap.hc_dep IS NOT NULL
+                    ORDER BY udn.nombre, a.nombre, d.nombre, p.nombre, PDV, NombreAsesor";
+
+  public function hcVacantes_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $udn = $this->uri->segment(3);
+        
+      $query = $this->hcQuery;
+      
+      if( $q = $this->db->query( $query ) ){
+
+        $result = array();
+        $md = array();
+
+        foreach( $q->result_array() as $index => $info ){
+          // mainDep
+          if( !isset($md[$info['mainDepId']]) ){
+            $md[$info['mainDepId']] = count($md);
+            $tmp = array(
+              'name' => $info['mainDep'],
+              'id' => $info['mainDepId'],
+              'clave' => $info['mainDepClave'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'udns' => array(),
+              'udn' => array()
+            );
+            array_push( $result, $tmp);
+          }
+          $mdIndex = $md[$info['mainDepId']];
+          
+          // UDN
+          if( !isset($result[$mdIndex]['udns'][$info['udnId']]) ){
+            $result[$mdIndex]['udns'][$info['udnId']] = count($result[$mdIndex]['udns']);
+            $tmp = array(
+              'name' => $info['udn'],
+              'id' => $info['udnId'],
+              'clave' => $info['mainDepClave'].'-'.$info['udnClave'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'areas' => array(),
+              'area' => array()
+            );
+            array_push( $result[$mdIndex]['udn'], $tmp);
+          }
+          $udnIndex = $result[$mdIndex]['udns'][$info['udnId']];
+          
+          // Area
+          if( !isset($result[$mdIndex]['udn'][$udnIndex]['areas'][$info['areaId']]) ){
+            $result[$mdIndex]['udn'][$udnIndex]['areas'][$info['areaId']] = count($result[$mdIndex]['udn'][$udnIndex]['areas']);
+            $tmp = array(
+              'name' => $info['area'],
+              'id' => $info['areaId'],
+              'clave' => $info['mainDepClave'].'-'.$info['udnClave'].'-'.$info['areaClave'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'deptos' => array(),
+              'dep' => array()
+            );
+            array_push( $result[$mdIndex]['udn'][$udnIndex]['area'], $tmp);
+          }
+          $areaIndex = $result[$mdIndex]['udn'][$udnIndex]['areas'][$info['areaId']];
+          
+          // Depto
+          if( !isset($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['deptos'][$info['depId']]) ){
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['deptos'][$info['depId']] = count($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['deptos']);
+            $tmp = array(
+              'name' => $info['dep'],
+              'id' => $info['depId'],
+              'clave' => $info['mainDepClave'].'-'.$info['udnClave'].'-'.$info['areaClave'].'-'.$info['depClave'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'puestos' => array(),
+              'puesto' => array()
+            );
+            array_push( $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'], $tmp);
+          }
+          $depIndex = $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['deptos'][$info['depId']];
+          
+          // Puesto
+          if( !isset($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puestos'][$info['puestoId']]) ){
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puestos'][$info['puestoId']] = count($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puestos']);
+            $tmp = array(
+              'name' => $info['puesto'],
+              'id' => $info['puestoId'],
+              'clave' => $info['mainDepClave'].'-'.$info['udnClave'].'-'.$info['areaClave'].'-'.$info['depClave'].'-'.$info['puestoClave'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'copcs' => array(),
+              'copc' => array()
+            );
+            array_push( $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'], $tmp);
+          }
+          $puestoIndex = $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puestos'][$info['puestoId']];
+          
+          // COPC
+          if( !isset($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copcs'][$info['copcId']]) ){
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copcs'][$info['copcId']] = count($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copcs']);
+            $tmp = array(
+              'name' => $info['copc'],
+              'id' => $info['copcId'],
+              'hc' => 0,
+              'c' => 0,
+              'v' => 0,
+              'asesores' => array()
+            );
+            array_push( $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copc'], $tmp);
+          }
+          $copcIndex = $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copcs'][$info['copcId']];
+          
+          $tmpAsesor = array(
+            'Ciudad' => $info['Ciudad'],
+            'PDV' => $info['PDV'],
+            'Aprobada' => $info['date_approbed'],
+            'AprobadaPor' => $info['aprobadaPor'],
+            'asesor' => $info['NombreAsesor'],
+            'esquema' => $info['esquema'],
+            'comentarios' => $info['comentarios'],
+            'esquema' => $info['esquema'],
+            'liberacion' => $info['ultimaLiberacion']
+          );
+          array_push($result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copc'][$copcIndex]['asesores'], $tmpAsesor);
+
+          // HC COUNT
+          $result[$mdIndex]['hc']++;
+          $result[$mdIndex]['udn'][$udnIndex]['hc']++;
+          $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['hc']++;
+          $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['hc']++;
+          $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['hc']++;
+          $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copc'][$copcIndex]['hc']++;
+          if( $info['NombreAsesor'] == null ){
+            $result[$mdIndex]['v']++;
+            $result[$mdIndex]['udn'][$udnIndex]['v']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['v']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['v']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['v']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copc'][$copcIndex]['v']++;
+          }else{
+            $result[$mdIndex]['c']++;
+            $result[$mdIndex]['udn'][$udnIndex]['c']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['c']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['c']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['c']++;
+            $result[$mdIndex]['udn'][$udnIndex]['area'][$areaIndex]['dep'][$depIndex]['puesto'][$puestoIndex]['copc'][$copcIndex]['c']++;
+          }
+        }
+                    
+        okResponse( 'Info Obtenida', 'data', $result, $this );
+        
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+      
+    });
+  }
+
+  public function hcDownload_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $udn = $this->uri->segment(3);
+        
+      $query = $this->hcQuery;
+      
+      if( $q = $this->db->query( $query ) ){
+   
+        okResponse( 'Info Obtenida', 'data', $q->result_array(), $this );
+        
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+      
+    });
+  }
+
+  public function hcListCodes_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $m = $this->db->select('*')->from('hc_mainDep')->order_by('nombre')->get();
+      $u = $this->db->select('*, mainDepId as relate')->from('hc_codigos_UnidadDeNegocio')->order_by('nombre')->get();
+      $a = $this->db->select('*, unidadDeNegocio as relate')->from('hc_codigos_Areas')->order_by('nombre')->get();
+      $d = $this->db->select('*, area as relate')->from('hc_codigos_Departamento')->order_by('nombre')->get();
+      $p = $this->db->select('*, departamento as relate')->from('hc_codigos_Puesto')->order_by('nombre')->get();
+      $c = $this->db->select('id, Puesto as nombre')->from('PCRCs_puestos')->order_by('nombre')->get();
+      
+      $result = array(
+        'main' => $m->result_array(),
+        'udn' => $u->result_array(),
+        'area' => $a->result_array(),
+        'departamento' => $d->result_array(),
+        'puesto' => $p->result_array(),
+        'alias' => $c->result_array()
+      );
+      okResponse( 'Info Obtenida', 'data', $result, $this );
+
+    });
+  }
+
+  public function hcListPdvs_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $p = $this->db->select("a.*, CONCAT('(',b.Ciudad,') ',PDV) as nombre, pais")
+                ->from('PDVs a')
+                ->join('cat_zones b','a.ciudad=b.id', 'left')
+                ->order_by('b.Ciudad, PDV')
+                ->get();
+      
+      okResponse( 'Info Obtenida', 'data', $p->result_array(), $this );
+
+    });
+  }
+
+  public function hcAddVacante_put(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $cleanData = $this->put();
+
+        $insert = array(
+                        'main_dep'  => $cleanData['main'],
+                        'hc_dep'    => $cleanData['departamento'],
+                        'hc_puesto' => $cleanData['puesto'],
+                        'departamento' => $cleanData['dep'],
+                        'puesto'    => $cleanData['alias'],
+                        'oficina'   => $cleanData['oficina'],
+                        'ciudad'    => $cleanData['ciudad'],
+                        'inicio'    => $cleanData['inicio'],
+                        'fin'       => $cleanData['fin'],
+                        'esquema'   => $cleanData['esquema'],
+                        'comentarios'  => $cleanData['comentarios'],
+                        'Activo'    => 1,
+                        'Status'    => 0,
+                        'created_by'   => $_GET['usid']
+                      );
+
+        if($cleanData['fin'] == null){
+          $insert['fin'] = '2030-12-31';
+        }
+
+        for($i=1; $i<=$cleanData['cantidad'];$i++){
+          $this->db->insert('asesores_plazas', $insert);
+          $moves[] = array(
+                            'vacante'     => $this->db->insert_id(),
+                            'fecha_out'   => $cleanData['inicio']
+                          );
+          $mopers[] = $this->db->insert_id();
+        }
+
+        solicitudVacante::mail($this, array('vacante' => $mopers[0], 'cantidad' => $cleanData['cantidad'], 'status' => 0, 'applier' => $cleanData['creador']), 'ask');
+
+        if($this->db->insert_batch('asesores_movimiento_vacantes', $moves)){
+          okResponse('Vacantes Solicitadas', 'data', $mopers, $this);
+        }else{
+          errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+      });
+
+      jsonPrint( $result );
+
+  }
+
+  public function hcVacantesList_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $query = "SELECT 
+                    a.id as idMove,
+                    vacante,
+                    Fecha_out AS lastOut,
+                    NOMBREASESOR(asesor_out,1) as lastName,
+                    mn.pais AS pais,
+                    mn.nombre AS mainDep,
+                    z.Ciudad,
+                    pdv.PDV AS Oficina,
+                    u.nombre AS UDN,
+                    ar.nombre AS Area,
+                    d.nombre AS Departamento,
+                    p.nombre AS Puesto,
+                    pcr.Puesto AS COPC,
+                    pc.Departamento as Dep
+                FROM
+                    asesores_movimiento_vacantes a
+                        LEFT JOIN
+                    asesores_plazas b ON a.vacante = b.id
+                        LEFT JOIN
+                    hc_mainDep mn ON b.main_dep = mn.id
+                        LEFT JOIN
+                    hc_codigos_Puesto p ON b.hc_puesto = p.id
+                        LEFT JOIN
+                    hc_codigos_Departamento d ON p.departamento = d.id
+                        LEFT JOIN
+                    hc_codigos_Areas ar ON d.area = ar.id
+                        LEFT JOIN
+                    hc_codigos_UnidadDeNegocio u ON ar.unidadDeNegocio = u.id
+                        LEFT JOIN
+                    PCRCs_puestos pcr ON b.puesto = pcr.id
+                        LEFT JOIN
+                    PCRCs pc ON b.departamento = pc.id
+                        LEFT JOIN
+                    PDVs pdv ON b.oficina = pdv.id
+                        LEFT JOIN
+                    cat_zones z ON b.ciudad = z.id
+                WHERE
+                    b.Activo = 1 AND b.Status = 1
+                        AND b.Fin > CURDATE()
+                        AND hc_puesto IS NOT NULL
+                        AND asesor_in IS NULL
+                ORDER BY pc.Departamento, Ciudad, pdv.PDV, p.nombre, COPC, lastOut, lastName";
+
+        if($r = $this->db->query( $query )){
+          okResponse('Vacantes Obtenidas', 'data', $r->result_array(), $this);
+        }else{
+          errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+      });
+
+      jsonPrint( $result );
+
+  }
+
+  public function nameExists_put(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $data = $this->put();
+
+      $this->db->from('Asesores')
+          ->where("`".$data['compare']."` = '".$data['val']."'", NULL, FALSE);
+
+      if($r = $this->db->get() ){
+
+        okResponse('Data obtenida', 'data', $r->num_rows(), $this, 'detalle', $r->row_array());
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+    jsonPrint( $result );
   }
 
 

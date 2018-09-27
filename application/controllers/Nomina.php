@@ -114,7 +114,7 @@ class Nomina extends REST_Controller {
                               LEFT JOIN
                           asesores_plazas c ON a.vacante = c.id
                               LEFT JOIN
-                          db_municipios d ON c.ciudad = d.id
+                              cat_zones d ON c.ciudad = d.id
                               LEFT JOIN
                           hc_codigos_Departamento e ON a.hc_dep = e.id
                               LEFT JOIN

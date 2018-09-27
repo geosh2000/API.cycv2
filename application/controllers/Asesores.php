@@ -51,7 +51,7 @@ class Asesores extends REST_Controller {
                 ->from("dep_asesores a")
                 ->join("asesores_plazas b",   'a.vacante    = b.id', 'LEFT')
                 ->join("PDVs c",              'b.oficina    = c.id', 'LEFT')
-                ->join("db_municipios d",     'b.ciudad     = d.id', 'LEFT')
+                ->join("cat_zones d",     'b.ciudad     = d.id', 'LEFT')
                 ->join("Asesores e",          'a.asesor     = e.id', 'LEFT')
                 ->join("PCRCs_puestos f",     'b.puesto     = f.id', 'LEFT')
                 ->join("hc_codigos_Puesto g", 'b.hc_puesto  = g.id', 'LEFT')
@@ -105,7 +105,7 @@ class Asesores extends REST_Controller {
                                 LEFT JOIN
                             PDVs f ON h.oficina = f.id
                                 LEFT JOIN
-                            db_municipios g ON f.ciudad = g.id
+                            cat_zones g ON f.ciudad = g.id
                         WHERE
                             (a.Nombre LIKE '%$search%' OR a.Usuario LIKE '%$search%' OR a.Usuario LIKE '%$search%') AND b.dep=29 AND Egreso>='$date'
                         ORDER BY Nombre")){
@@ -133,10 +133,10 @@ class Asesores extends REST_Controller {
 
       if($list = $this->db->query("SELECT
                                       a.id, PDV, b.Ciudad
-                                  FROM
+                                  FROM 
                                       PDVs a
                                           LEFT JOIN
-                                      db_municipios b ON a.ciudad = b.id
+                                      cat_zones b ON a.ciudad = b.id
                                   WHERE
                                       (a.Activo=1 OR (a.Activo=0 AND a.PDV LIKE '%General%'))
                                           AND (a.PDV LIKE 'MX%' OR a.PDV LIKE '%General%')
@@ -149,7 +149,7 @@ class Asesores extends REST_Controller {
         $result = array(
                         'status'  => false,
                         'msg'     => $this->db->error(),
-                        'wtf'     => "que?"
+                        'wtf'     => "que de que?"
                       );
       }
 

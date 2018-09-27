@@ -21,7 +21,7 @@ class AsesorVacantesHisto_model extends CI_Model{
               ->join("asesores_plazas b", 'a.vacante      = b.id'       , 'LEFT')
               ->join("PCRCs c"          , 'b.departamento = c.id'       , 'LEFT')
               ->join("PCRCs_puestos d"  , 'b.puesto       = d.id'       , 'LEFT')
-              ->join("db_municipios e"  , 'b.ciudad       = e.id'       , 'LEFT')
+              ->join("cat_zones e"  , 'b.ciudad       = e.id'       , 'LEFT')
               ->join("PDVs f"           , 'b.oficina      = f.id'       , 'LEFT')
               ->where( array('asesor_in' => $id ) )
               ->order_by( 'Fecha_in', 'ASC' );

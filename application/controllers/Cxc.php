@@ -720,10 +720,10 @@ class Cxc extends REST_Controller {
           cxcId,
           montoFiscal,
           maxParcialidad,
-          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
-          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
           COUNT(*) AS parcialidades,
-          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, id, NULL)) AS paidParc
+          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) = 2, id, NULL)) AS paidParc
       FROM
           cxc_payTable
       WHERE 
@@ -847,10 +847,10 @@ class Cxc extends REST_Controller {
           cxcId,
           montoFiscal,
           maxParcialidad,
-          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
-          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) = 2, montoParcial, 0)) AS paidMonto,
+          SUM(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) != 2, montoParcial, 0)) AS pendienteMonto,
           COUNT(*) AS parcialidades,
-          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,status)) = 2, id, NULL)) AS paidParc
+          COUNT(IF(IF(status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(status=0 AND CURDATE() >= ADDDATE(payday,2),-1,status)) = 2, id, NULL)) AS paidParc
       FROM
           cxc_payTable
       WHERE 
@@ -864,7 +864,7 @@ class Cxc extends REST_Controller {
                 ->select('NOMBREASESOR(c.asesor,5) as Colaborador', FALSE)
                 ->select('NOMBREASESOR(c.asesor,'.$name.') as Asesor', FALSE) 
                 ->select('Localizador')
-                ->select('IF(a.status = 1 AND CURDATE() >= ADDDATE(payday,-2),2,IF(a.status=0 AND CURDATE() >= ADDDATE(payday,-2),-1,a.status)) as status', FALSE)
+                ->select('IF(a.status = 1 AND CURDATE() >= ADDDATE(payday,2),2,IF(a.status=0 AND CURDATE() >= ADDDATE(payday,2),-1,a.status)) as status', FALSE)
                 ->select('montoParcial as montoQuincena')
                 ->from('cxc_payTable a')
                 ->join('sumary b', 'a.cxcId=b.cxcId', 'left')

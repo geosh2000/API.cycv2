@@ -168,7 +168,10 @@ class DetalleAsesores extends REST_Controller {
                         TIMESTAMPDIFF(DAY, Ingreso, IF(Egreso<'2030-01-01',Egreso,CURDATE())) as old_days,
                         IF(Egreso<CURDATE(),0,1) AS activo, c.recontratable, 
                         d.tipo, inicio, fin, IF(fin IS NOT NULL AND fin<CURDATE() AND Egreso>CURDATE(), 1, 0) as vencido,
-                        IF(e.id IS NOT NULL,1,0) as activeSol
+                        IF(e.id IS NOT NULL,1,0) as activeSol,
+                        a.id as idAsesor,
+                        ev.id as evalId,
+                        d.id as contratoId
                     FROM
                         Asesores a
                             LEFT JOIN
@@ -177,17 +180,20 @@ class DetalleAsesores extends REST_Controller {
                         asesores_recontratable c ON a.id = c.asesor
                             LEFT JOIN
                         asesores_contratos d ON a.id=d.asesor AND d.activo=1
+                            LEFT JOIN 
+                        asesores_evaluacionD ev ON d.id=ev.id
                             LEFT JOIN
                         rrhh_solicitudesCambioBaja e ON a.id=e.asesor AND e.status=0
                     WHERE
                         a.id = @asesor AND COALESCE(deleted,0)=0";
           
           $contratos = "SELECT 
-                               *
+                               a.*,
+                                ev.id as evalId, ev.status, NOMBREASESOR(a.asesor,2) as Nombre
                           FROM
-                            asesores_contratos
+                            asesores_contratos a LEFT JOIN asesores_evaluacionD ev ON a.id=ev.contrato
                           WHERE
-                            asesor = @asesor AND COALESCE(deleted,0)=0";
+                            a.asesor = @asesor AND COALESCE(deleted,0)=0";
           
           if( $q = $this->db->query($query)){
               
@@ -236,7 +242,7 @@ class DetalleAsesores extends REST_Controller {
                             LEFT JOIN
                         asesores_plazas b ON a.vacante = b.id
                             LEFT JOIN
-                        db_municipios c ON b.ciudad = c.id
+                        cat_zones c ON b.ciudad = c.id
                             LEFT JOIN
                         PDVs d ON b.oficina = d.id
                             LEFT JOIN
@@ -309,7 +315,7 @@ class DetalleAsesores extends REST_Controller {
                             LEFT JOIN
                         asesores_plazas b ON a.vacante = b.id
                             LEFT JOIN
-                        db_municipios c ON b.ciudad = c.id
+                        cat_zones c ON b.ciudad = c.id
                             LEFT JOIN
                         PDVs d ON b.oficina = d.id
                             LEFT JOIN

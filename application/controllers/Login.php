@@ -18,6 +18,7 @@ class Login extends REST_Controller {
   public function login_put(){
 
     $data = $this->put();
+    $ci_response = $this->uri->segment(3);
 
     if(!$data['usp'] || trim($data['usp']) == ''){
       errResponse('Error de autenticacion', REST_Controller::HTTP_BAD_REQUEST, $this, 'msg', "No se recibió ningún password");
@@ -42,6 +43,10 @@ class Login extends REST_Controller {
                           'username'    => $user['username']
                         );
 
+      if( isset($ci_response) ){
+        okResponse('Login Correcto', 'data', $response, $this);
+      }
+      
       $this->response( $response );
 
     }

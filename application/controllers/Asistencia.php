@@ -1612,7 +1612,7 @@ public function pyaV2_get(){
                 foreach($info as $key => $field){
                     if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' ){
                         $value = $field == null ? "NULL" : "'$field'";
-                        $nUpd .= "`$key` = $value, ";
+                        $nUpd .= "`$key` = VALUES($key), ";
                     }
                 }
                 $nUpd = substr($nUpd,0,-2);
@@ -1629,37 +1629,39 @@ public function pyaV2_get(){
 
                 $historic = array(
                     'asesor' => $info['asesor'],
+                    'tipo' => 0,
                     'campo' => $campo,
                     'old_val' => $oldVal,
                     'new_val' => json_encode($info),
                     'changed_by' => $_GET['usid']
                 );
 
-                $this->db->set($historic)->insert('historial_asesores');
+                // $this->db->set($historic)->insert('historial_asesores');
 
                 unset($historic['campo']);
 
                 if( isset($cambioFlag) && $cambioFlag == 1 ){
-                    if( $regsByAsesor[$info['asesor']] > 1 ){
-                        $counts = 0;
-                    }else{
-                        switch($tipo){
-                            case 1:
-                            case '1':
-                            case 3:
-                            case '3':
-                                $counts = 0;
-                                break;
-                            default:
-                                $counts = 1;
-                                break;
-                        }
-                    }
-                    $historic['Fecha'] = $info['Fecha'];
                     $historic['tipo'] = $tipo;
-                    $historic['countAsChange'] = $counts;
                     $historic['caso'] = $caso;
                 }
+                
+                if( $regsByAsesor[$info['asesor']] > 1 ){
+                    $counts = 0;
+                }else{
+                    switch($tipo){
+                        case 2:
+                        case '2':
+                        case 4:
+                        case '4':
+                        $counts = 1;
+                        break;
+                        default:
+                        $counts = 0;
+                        break;
+                    }
+                }
+                $historic['countAsChange'] = $counts;
+                $historic['Fecha'] = $info['Fecha'];
 
 
                 $ct = $this->db->set($historic)->get_compiled_insert('asesores_cambioTurno');

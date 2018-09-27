@@ -123,20 +123,20 @@ class Lists extends REST_Controller {
             
             $data        = $this->put();
             $filters     = $data['filters'];
-            $searchField = $data['field'] == 'branchId' ? 'branchId' : 'cityForListing';
+            $searchField = $data['field'] == 'branchId' ? 'branchid' : 'cityForListing';
             
             switch( $data['field'] ){
                 case 'branchId':
-                    $this->db->select("branchId as id, name");
+                    $this->db->select("branchid as id, PDV as name");
                     break;
                 case 'Localidad':
                     $this->db->select("cityForListing as id, cityForListing as name");
                     break;
             }
             
-            $this->db->from('cat_branch')
+            $this->db->from('PDVs')
                 ->group_by($searchField)
-                ->order_by('name');   
+                ->order_by('PDV');   
             
             foreach( $filters as $field => $info ){
                 if( $field != $searchField ){
@@ -183,6 +183,18 @@ class Lists extends REST_Controller {
         });
       
         jsonPrint( $result );
+    }
+
+    public function listProfiles_get(){
+        $this->db->select('id, profile_name as name')
+            ->from('profilesDB')
+            ->order_by('profile_name');
+
+        if( $q = $this->db->get() ){
+            okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
     }
 
 }

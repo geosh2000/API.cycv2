@@ -81,34 +81,8 @@ class Mailing extends REST_Controller {
         
         $mails = $this->getMailList('contratos');
 
-        $this->db->query("SET @inicio = CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
-                    '-',
-                    IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
-                        '0',
-                        ''),
-                    MONTH(ADDDATE(CURDATE(), 10)),
-                    '-',
-                    IF(DAY(ADDDATE(CURDATE(), 10)) < 15,
-                        '01',
-                        '16'))");
-        $this->db->query("SET @fin = CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
-                    '-',
-                    IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
-                        '0',
-                        ''),
-                    MONTH(ADDDATE(CURDATE(), 10)),
-                    '-',
-                    IF(DAY(ADDDATE(CURDATE(), 10)) < 15,
-                        '15',
-                        DAY(ADDDATE(DATE_ADD(CONCAT(YEAR(ADDDATE(CURDATE(), 10)),
-                                            '-',
-                                            IF(MONTH(ADDDATE(CURDATE(), 10)) < 10,
-                                                '0',
-                                                ''),
-                                            MONTH(ADDDATE(CURDATE(), 10)),
-                                            '-01'),
-                                    INTERVAL 1 MONTH),
-                                - 1))))");
+        $this->db->query("SET @inicio = date_add(CURDATE(), interval 15 DAY)");
+        $this->db->query("SET @fin = date_add(@inicio, interval 15 DAY)");
 
         $contQ = $this->db->query("SELECT 
                                         a.asesor,
@@ -130,8 +104,7 @@ class Mailing extends REST_Controller {
                                     WHERE
                                         activo = 1 AND deleted = 0 AND tipo = 1
                                             AND vacante IS NOT NULL
-                                            AND dep != 29
-                                    HAVING st IS NOT NULL 
+                                            AND dep != 29 AND fin BETWEEN @inicio AND @fin
                                     ORDER BY st, Nombre");
         
         $contratos = $contQ->result_array();
@@ -157,7 +130,7 @@ class Mailing extends REST_Controller {
 
         foreach( $mails as $index => $info ){
             $text = '';
-            $text = "<p>Hola ".$info['Nombre'].",</p><p>Estos son los contratos vencidos y próximos a vencer:</p>".$mailBody[0];
+            $text = "<p>Hola ".$info['Nombre'].",</p><p>Estos son los contratos próximos a vencer:</p>".$mailBody[0];
             $this->sendMail($mailBody[1], $info['usuario'], 'contratos', $text);
         }
         
@@ -172,7 +145,7 @@ class Mailing extends REST_Controller {
             $super = $info['Supervisor'] == NULL ? 'NoSup' : ucwords(str_replace('.',' ',$info['Supervisor']));
             $sup = $info['Supervisor'];
             $color = $info['st'] == 'Vencido' ? 'red' : '#c6b64b';
-            $body .= "<tr><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Nombre']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$super."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Dep']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['fin']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['st']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><a href='https://operaciones.pricetravel.com.mx/cycv2/#/detail-asesor/".$info['asesor']."'>Ver en CyC</a></td></tr>\n";
+            $body .= "<tr><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Nombre']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$super."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'>".$info['Dep']."</td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['fin']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><span style='color: $color'>".$info['st']."</span></td><td style='padding: 5px; border: 1px solid #d5d3d3;'><a href='https://operaciones.pricetravel.com.mx/cycv2/#/evaluacionesDesempeno/".$info['asesor']."'>Ver en CyC</a></td></tr>\n";
         }
         unset($index, $info);
         

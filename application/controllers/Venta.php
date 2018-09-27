@@ -420,18 +420,17 @@ class Venta extends REST_Controller {
                             ->from("Fechas a")
                             ->join("dep_asesores b", "a.Fecha=b.Fecha", "left")
                             ->join("asesores_plazas p", "b.vacante=p.id", "left")
-                            ->join("db_municipios m", "p.ciudad = m.id", "left")
+                            ->join("cat_zones m", "p.ciudad = m.id", "left")
                             ->where('a.Fecha BETWEEN ', "'$start' AND '$end'", FALSE)
                             ->where('dep', 29)
                             ->where('vacante IS NOT ', "NULL", FALSE);
                 }else{
-                    $this->db->select("Fecha, b.branchId, TRIM(cityForListing) as Ciudad, name as PDV, TRIM(displayNameShort) as PdvName, FINDSUPERDAYPDV(a.Fecha, c.id, 1) as Supervisor", FALSE)
+                    $this->db->select("Fecha, b.branchId, TRIM(cityForListing) as Ciudad, PDV, TRIM(displayNameShort) as PdvName, FINDSUPERDAYPDV(a.Fecha, b.id, 1) as Supervisor", FALSE)
                             ->from("Fechas a")
-                            ->join('cat_branch b', '1=1')
-                            ->join('PDVs c', 'b.branchid=c.branchid', 'left')
+                            ->join('PDVs b', '1=1')
                             ->where('Fecha BETWEEN ', "'$start' AND '$end'", FALSE)
-                            ->where('isActive', 1)
-                            ->where('name LIKE ', "'MX%'", FALSE)
+                            ->where('b.Activo', 1)
+                            ->where('PDV LIKE ', "'MX%'", FALSE)
                             ->where('displayNameShort !=', "home");
                 }
 
@@ -929,10 +928,9 @@ class Venta extends REST_Controller {
             // START LOCS QUERY
             // =================================================
                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsCount");
-                $this->db->select("Fecha, Localizador, asesor, dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, c.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super, a.branchid")
+                $this->db->select("Fecha, Localizador, asesor, dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, c.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, c.id, 2) as super, a.branchid")
                     ->from("baseOK a")
-                    ->join("cat_branch c", "a.branchid = c.branchId", "left")
-                    ->join("PDVs p", "a.branchid = p.branchId", "left")
+                    ->join("PDVs c", "a.branchid = c.branchId", "left")
                     ->group_by(array('Fecha','Localizador'));
                 
                 $locs = $this->db->get_compiled_select();
@@ -972,7 +970,7 @@ class Venta extends REST_Controller {
                     $this->db->select("IF(isPaq = 0, i.servicio, 'Paquete') as servicio", FALSE);
                 }
 
-                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights, j.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, p.id, 2) as super, a.branchid")
+                $this->db->select("Fecha, Localizador, item, asesor, a.dep, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Venta, NewLoc, gpoCanalKpi, a.tipo, tipoRsva, gpoTipoRsva, clientNights, j.displayNameShort as branch, cityForListing as city, FindSuperDayPDV(@fecha, j.id, 2) as super, a.branchid")
                     ->from("baseOK a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,
@@ -981,8 +979,7 @@ class Venta extends REST_Controller {
                                                     0,
                                                     a.dep)) = c.dep", "left", FALSE)
                     ->join("itemTypes i", "a.itemType = i.type AND a.categoryId = i.category", "left", FALSE)
-                    ->join("cat_branch j", "a.branchid = j.branchId", "left")
-                    ->join("PDVs p", "a.branchid = p.branchId", "left")
+                    ->join("PDVs j", "a.branchid = j.branchId", "left")
                     ->group_by(array('Fecha','Localizador', 'item'));
 
                 $servicios = $this->db->get_compiled_select();
@@ -1012,8 +1009,6 @@ class Venta extends REST_Controller {
                         AND c.Fecha = CURDATE()
                         AND c.vacante IS NOT NULL
                         AND c.dep = 29
-                        LEFT JOIN
-                    cat_branch d ON b.branchid = d.branchid
                 WHERE
                     departamento = 29 AND a.Activo = 1
                         AND Status = 1

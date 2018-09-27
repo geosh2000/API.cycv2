@@ -63,7 +63,7 @@ class Vacantes extends REST_Controller {
                     ->from("asesores_plazas a")
                     ->join("PCRCs b","ON a.departamento = b.id","LEFT")
                     ->join("PCRCs_puestos c","a.puesto = c.id","LEFT")
-                    ->join("db_municipios d","a.ciudad = d.id","LEFT")
+                    ->join("cat_zones d","a.ciudad = d.id","LEFT")
                     ->join("PDVs e","a.oficina = e.id","LEFT")
                     ->join("($udns) f", "hc_puesto=f.id", "LEFT")
                     ->join("($vacantes) g", "a.id = g.vacante", "LEFT")                                    

@@ -1328,6 +1328,336 @@ class SolicitudBC extends REST_Controller {
       $mail->bajaSolicitud( $asesor, $_GET['usid'], $fecha, $reemp, $recont ); //call function
     }
 
+    public function addAsesorV2_put(){
+
+      $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+  
+        $data = $this->put();
+        $asesor = $data['fields'];
+        $asesor['Usuario'] = str_replace(' ', '.', strtolower($asesor['N Corto']));
+        $asesor['Nombre'] = $asesor['Nombre_Separado']." ".$asesor['Apellidos_Separado'];
+        $asesor['Egreso'] = '20301231';
+        unset($asesor['Pais']);
+        unset($asesor['vacante']);
+        unset($asesor['N Corto']);
+        unset($asesor['profile']);
+        unset($asesor['contrato']);
+        unset($asesor['fin_contrato']);
+  
+        $flag = true;
+  
+        // =================================================
+        // START Tabla Asesores
+        // =================================================
+          $this->db->set( '`N Corto`', "'".$data['fields']['N Corto']."'", FALSE );
+          if($this->db->set($asesor)->insert('Asesores')){
+            $inserted_asesor=$this->db->insert_id();
+          }else{
+            errResponse('Error al ingresar en Tabla Asesores', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Asesores
+        // =================================================
+  
+        // =================================================
+        // START Tabla userDB
+        // =================================================
+          $user     = array(
+                            'username'            => $asesor['Usuario'],
+                            'profile'             => $data['fields']['profile'],
+                            'asesor_id'           => $inserted_asesor,
+                            'active'              => 1,
+                            'noAD'                => 0
+                          );
+  
+          if($this->db->set($user)->insert('userDB')){
+            $inserted_userDB=$this->db->insert_id();
+          }else{
+            $this->deleteAddedAsesor($inserted_asesor, 'Usuarios', $this->db->error());
+          }
+        // =================================================
+        // END Tabla userDB
+        // =================================================
+  
+        // =================================================
+        // START Tabla Supervisores
+        // =================================================
+          $super    = array(
+                            'Fecha'               => $asesor['Ingreso'],
+                            'asesor'              => $inserted_asesor,
+                            'pcrc'                => 0
+                          );
+  
+          if($this->db->set($super)->insert('Supervisores' )){
+            $inserted_super=$this->db->insert_id();
+          }else{
+            $this->deleteAddedAsesor($inserted_asesor, 'Supervisores', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Supervisores
+        // =================================================
+  
+        // =================================================
+        // START Tabla Contratos
+        // =================================================
+          $contrato = array(
+                          'asesor'              => $inserted_asesor,
+                          'tipo'                => $data['fields']['contrato'],
+                          'inicio'              => $asesor['Ingreso'],
+                          'fin'                 => $data['fields']['fin_contrato'],
+                          'activo'              => 1
+                        );
+        
+          if( $this->db->set($contrato)
+              ->set('creator', $_GET['usid'])
+              ->set('Last_Update', 'NOW()', FALSE)
+              ->insert('asesores_contratos') ){
+            $inserted_contrato=$this->db->insert_id();
+          }else{
+            $this->deleteAddedAsesor($inserted_asesor, 'Contratos', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Contratos
+        // =================================================
+  
+        // =================================================
+        // START Tabla Historial
+        // =================================================
+          $historial = array(
+                            'asesor'              => $inserted_asesor,
+                            'campo'               => 'Nuevo Asesor',
+                            'old_val'             => '',
+                            'new_val'             => '',
+                            'changed_by'          => $_GET['usid']
+                          );
+  
+          if($this->db->set($historial)->insert('historial_asesores')){
+            $inserted_histo=$this->db->insert_id();
+          }else{
+            $this->deleteAddedAsesor($inserted_asesor, 'Historial', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Historial
+        // =================================================
+  
+        // =================================================
+        // START Tabla Vacantes
+        // =================================================
+          $move     = array(
+                            'fecha_in'            => $asesor['Ingreso'],
+                            'asesor_in'           => $inserted_asesor,
+                            'userupdate'          => $_GET['usid']
+                          );
+  
+          if( !$this->db->set($move)->where("id", $data['fields']['vacante'])->update('asesores_movimiento_vacantes') ){
+            $this->deleteAddedAsesor($inserted_asesor, 'Vacantes', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Vacantes
+        // =================================================
+  
+        // =================================================
+        // START Tabla Salario (INACTIVO)
+        // =================================================
+          // $salario  = array(
+          //                   'asesor'              => $inserted_asesor,
+          //                   'Fecha'               => $data['fechaCambio'],
+          //                   'factor'              => $data['factor']
+          //                 );
+  
+          // if( !$this->db->set($salario)->insert('asesores_fcSalario') ){
+          //   $this->deleteAddedAsesor($inserted_asesor, 'Salario', $this->db->error());
+          // }
+        // =================================================
+        // END Tabla Salario
+        // =================================================
+  
+        // =================================================
+        // START Tabla DepAsesores
+        // =================================================
+          if( !$this->db->query("SELECT depAsesores($inserted_asesor, ADDDATE(CURDATE(),365))") ){
+            $this->deleteAddedAsesor($inserted_asesor, 'DepAsesores', $this->db->error());
+          }
+        // =================================================
+        // END Tabla DepAsesores
+        // =================================================
+  
+        okResponse( 'Asesor registrado', 'asesor_id', $inserted_asesor, $this );
+  
+      });
+  
+      jsonPrint( $result );
+  
+    }
+
+    public function reIngresoV2_put(){
+
+      $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+  
+        $data = $this->put();
+        $asesor = $data['fields'];
+        $asesor['Usuario'] = str_replace(' ', '.', strtolower($asesor['N Corto']));
+        $asesor['Nombre'] = $asesor['Nombre_Separado']." ".$asesor['Apellidos_Separado'];
+        $asesor['Egreso'] = '20301231';
+        unset($asesor['Pais']);
+        unset($asesor['vacante']);
+        unset($asesor['N Corto']);
+        unset($asesor['profile']);
+        unset($asesor['contrato']);
+        unset($asesor['fin_contrato']);
+        
+        $flag = true;
+  
+        // =================================================
+        // START Tabla Asesores
+        // =================================================
+          
+          $oldId = $data['asesorId'];
+       
+          $this->db->where('id', $oldId)
+                  ->set('`N Corto`', "'".$data['fields']['N Corto']."'", FALSE);
+          if(!$this->db->update( 'Asesores', $asesor )){
+              errResponse('Error en la base de datos de Asesores', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Asesores
+        // =================================================
+
+        // =================================================
+        // START Tabla Usuarios
+        // =================================================
+
+          $params = array(
+            'username' => $asesor['Usuario'],
+            'active'  => 1,
+            'profile' => $data['fields']['profile'],
+            'noAD' => 0
+          );
+      
+          $this->db->where('asesor_id', $oldId);
+          if(!$this->db->update( 'Asesores', $params )){
+              errResponse('Error en la base de datos de Usuarios', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Usuarios
+        // =================================================
+  
+        // =================================================
+        // START Tabla Supervisores
+        // =================================================
+          $super    = array(
+                            'Fecha'               => $asesor['Ingreso'],
+                            'asesor'              => $oldId,
+                            'pcrc'                => 0
+                          );
+  
+          if($this->db->set($super)->insert('Supervisores' )){
+            $inserted_super=$this->db->insert_id();
+          }else{
+            errResponse('Error en la base de datos de Supervisores', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Supervisores
+        // =================================================
+  
+        // =================================================
+        // START Tabla Contratos
+        // =================================================
+          $contrato = array(
+                            'asesor'              => $oldId,
+                            'tipo'                => $data['contrato'],
+                            'inicio'              => $asesor['Ingreso'],
+                            'fin'                 => $fin['fin_contrato'],
+                          );
+          $this->db->set($contrato)
+                ->set('creator', $_GET['usid'])
+                ->set('Last_Update', 'NOW()', FALSE)
+                ->insert('asesores_contratos');
+        
+          $id = $this->db->insert_id();
+          
+          if( !$this->db->set(array('activo' => 0, 'updater' => $_GET['usid']))
+                              ->set('Last_Update', 'NOW()', FALSE)
+                              ->where(array('asesor' => $oldId, 'deleted' => 0))
+                              ->update('asesores_contratos') ){
+            errResponse('Error en la base de datos de Contratos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Contratos
+        // =================================================
+                                
+        // =================================================
+        // START Tabla Historial
+        // =================================================
+          $historial = array(
+                            'asesor'              => $oldId,
+                            'campo'               => 'Reingreso Asesor',
+                            'old_val'             => '',
+                            'new_val'             => '',
+                            'changed_by'          => $_GET['usid']
+                          );
+  
+          if($this->db->set($historial)->insert('historial_asesores')){
+            $inserted_histo=$this->db->insert_id();
+          }else{
+            errResponse('Error en la base de datos de Historial', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Historial
+        // =================================================
+  
+        // =================================================
+        // START Tabla Vacantes
+        // =================================================
+          $move     = array(
+                            'fecha_in'            => $asesor['Ingreso'],
+                            'asesor_in'           => $oldId,
+                            'userupdate'          => $_GET['usid']
+                          );
+  
+          if($this->db->set($move)->where("id = ".$data['fields']['vacante'])->update('asesores_movimiento_vacantes')){
+  
+          }else{
+            errResponse('Error en la base de datos de Movimientos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla Vacantes
+        // =================================================
+  
+        // =================================================
+        // START Tabla Salarios INACTIVO
+        // =================================================
+          // $salario  = array(
+          //                   'asesor'              => $data['asesor'],
+          //                   'Fecha'               => $data['fechaCambio'],
+          //                   'factor'              => $data['factor']
+          //                 );
+  
+          // if( !$this->db->set($salario)->insert('asesores_fcSalario') ){
+          //   errResponse('Error en la base de datos de Salarios', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          // }
+        // =================================================
+        // END Tabla Salarios
+        // =================================================
+  
+        // =================================================
+        // START Tabla DepAsesores
+        // =================================================
+          if( !$this->db->query("SELECT depAsesores(".$oldId.", ADDDATE(CURDATE(),365))") ){
+            errResponse('Error en la base de datos de DepAsesores', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+        // =================================================
+        // END Tabla DepAsesores
+        // =================================================
+  
+        okResponse( 'Reingreso correcto', 'data', true, $this );
+  
+      });
+  
+      jsonPrint( $result );
+  
+    }
+
     // MAILING FUNCTIONS
     private function countReturn($q, $msg, $err = false){
       if( $q->num_rows() == 0 ){
@@ -1462,5 +1792,6 @@ class SolicitudBC extends REST_Controller {
       
       return true;
   }  
+
 
 }
