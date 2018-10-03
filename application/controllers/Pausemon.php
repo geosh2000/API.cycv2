@@ -20,9 +20,23 @@ class Pausemon extends REST_Controller {
       $date = $this->uri->segment(3);
       segmentSet(  3, "Debe incluir una fecha", $this );
       segmentType( 3, "Debe incluir una fecha en formato YYYY-MM-DD", $this, $type = 'date' );
-        
+
+      
       $asesor = $this->uri->segment(4);
-        
+
+      switch( $asesor ){
+        case 'MX':
+          $pais = 1;
+          unset($asesor);
+          break;
+        case 'CO':
+          $pais = 6;
+          unset($asesor);
+          break;
+        default:
+          $pais = 6;
+          break;
+      }
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS deletePauses");
       $this->db->query("CREATE TEMPORARY TABLE deletePauses SELECT * FROM asesores_pausas WHERE CAST(Inicio as DATE)>=ADDDATE(CURDATE(),-1)");
@@ -42,6 +56,7 @@ class Pausemon extends REST_Controller {
               ->where('a.asesor !=', 0)
               ->where('Inicio >=', $date)
               ->where('Inicio <=', $date." 23:59:59")
+              ->where('b.operacion', $pais)
               ->order_by('Inicio');
         
       if( isset($asesor) ){

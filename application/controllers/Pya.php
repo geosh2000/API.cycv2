@@ -20,6 +20,19 @@ class Pya extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $date = $this->uri->segment(3);
+        $pais = $this->uri->segment(4);
+
+        switch( $this->uri->segment(4) ){
+          case 'MX':
+            $pais = 1;
+            break;
+          case 'CO':
+            $pais = 6;
+            break;
+          default:
+            $pais = 6;
+            break;
+        }
 
         $this->db->select("a.*,
                             NOMBREASESOR(a.asesor, 1) as nombre,
@@ -38,6 +51,7 @@ class Pya extends REST_Controller {
             ->where("dep !=", 29)
             ->where("dep !=", 1)
             ->where("dep !=", 47)
+            ->where("a.operacion", $pais)
             ->order_by("dep, nombre");
             
 
@@ -65,6 +79,19 @@ class Pya extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $date = $this->uri->segment(3);
+        $pais = $this->uri->segment(4);
+
+        switch( $this->uri->segment(4) ){
+          case 'MX':
+            $pais = 1;
+            break;
+          case 'CO':
+            $pais = 6;
+            break;
+          default:
+            $pais = 6;
+            break;
+        }
 
         $this->db->select("a.*")
             ->from("asesores_logs a")
@@ -78,6 +105,7 @@ class Pya extends REST_Controller {
 
             ->where("login < ", "ADDDATE('$date',1)", FALSE)
             ->where("a.asesor !=", 0)
+            ->where("b.operacion", $pais)
             ->where("dep !=", 29);
             
 
@@ -107,6 +135,19 @@ class Pya extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $date = $this->uri->segment(3);
+        $pais = $this->uri->segment(4);
+
+        switch( $this->uri->segment(4) ){
+          case 'MX':
+            $pais = 1;
+            break;
+          case 'CO':
+            $pais = 6;
+            break;
+          default:
+            $pais = 6;
+            break;
+        }
 
         $this->db->select("a.*, Excepcion, Codigo, NOMBREASESOR(changed_by,1) as nombre")
             ->from("asesores_pya_exceptions a")

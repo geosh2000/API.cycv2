@@ -197,4 +197,27 @@ class Lists extends REST_Controller {
         }
     }
 
+    public function pdvList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $this->db->select("a.*,
+                CONCAT(displayNameShort, ' - ', cityForListing) AS displayNameList", FALSE)
+                ->from('PDVs a')
+                ->join('cat_zones b', 'a.branchZoneId = b.id', 'left')
+                ->where('Activo',1);
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this, 'filters', null);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+        jsonPrint( $result );
+    }
+
 }

@@ -22,6 +22,7 @@ class Afiliados extends REST_Controller {
         $query = "SELECT 
                     a.id,
                     afiliado,
+                    a.currency,
                     IF(b.view = 1 OR afiliados_all = 1
                             OR allmighty = 1,
                         1,
@@ -57,6 +58,7 @@ class Afiliados extends REST_Controller {
         $report = $this->uri->segment(3);
         $inicio = $this->uri->segment(4);
         $fin = $this->uri->segment(5);
+        $currency = $this->uri->segment(6);
 
         segmentSet( 3, 'Número de reporte es mandatorio', $this );
         segmentSet( 4, 'Fecha de inicio necesaria', $this );
@@ -103,7 +105,7 @@ class Afiliados extends REST_Controller {
         // START query de Afiliados
         // ===============================================================
       
-            $this->generalKpis($inicio, $fin, $params);
+            $this->generalKpis($inicio, $fin, $params, $currency);
             $query = "SELECT * FROM result";
             $queryTotal = "SELECT 'Total' as Fecha, 
                                 SUM(MontoIn) as MontoIn,
@@ -151,43 +153,40 @@ class Afiliados extends REST_Controller {
 
   }
 
-  private function generalKpis($inicio, $fin, $params){
+  private function generalKpis($inicio, $fin, $params, $currency = 'MXN'){
 
     $this->db->query("SET @inicio = CAST('$inicio' AS DATE)");
     $this->db->query("SET @fin = CAST('$fin' AS DATE)");
     
     $this->db->query("DROP TEMPORARY TABLE IF EXISTS afLocs");
     $this->db->query("CREATE TEMPORARY TABLE afLocs SELECT 
-        a.Fecha, Localizador, a.asesor, c.dep,
-        SUM(IF(gpoTipoRsva != 'Out'  AND a.asesor >= 0, VentaMXN + OtrosIngresosMXN + EgresosMXN,0)) AS MontoIn,
-        SUM(IF(gpoTipoRsva != 'Out'  AND a.asesor =-1, VentaMXN + OtrosIngresosMXN + EgresosMXN,0)) AS MontoOnline,
-        SUM(IF(gpoTipoRsva = 'Out', VentaMXN + OtrosIngresosMXN + EgresosMXN,0)) AS MontoOut,
-        IF(gpoTipoRsva != 'Out'  AND a.asesor >= 0, IF(SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0
-                AND SUM(VentaMXN) > 0,
-            Localizador,
-            NULL),NULL) AS NewLocIn,
-        IF(gpoTipoRsva != 'Out'  AND a.asesor =-1, IF(SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0
-                AND SUM(VentaMXN) > 0,
-            Localizador,
-            NULL),NULL) AS NewLocOnline,
-        IF(gpoTipoRsva = 'Out', IF(SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0
-                AND SUM(VentaMXN) > 0,
-            Localizador,
-            NULL),NULL) AS NewLocOut, gpoTipoRsva
-    FROM
-        t_Locs a
-            LEFT JOIN
-        chanGroups b ON a.chanId = b.id
-            LEFT JOIN
-        dep_asesores c ON a.asesor = c.asesor
-            AND a.Fecha = c.Fecha
-            LEFT JOIN
-        config_tipoRsva d ON IF(c.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
-                                                AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo
-    WHERE
-        a.chanId IN (".$params['chanIds'].")
-            AND a.Fecha BETWEEN @inicio AND @fin
-    GROUP BY a.Fecha, Localizador");
+    a.Fecha, Localizador, ml.asesor, c.dep,
+    SUM(IF(gpoTipoRsva != 'Out'  AND ml.asesor >= 0, Venta".$currency." + OtrosIngresos".$currency." + Egresos".$currency.",0)) AS MontoIn,
+    SUM(IF(gpoTipoRsva != 'Out'  AND ml.asesor =-1, Venta".$currency." + OtrosIngresos".$currency." + Egresos".$currency.",0)) AS MontoOnline,
+    SUM(IF(gpoTipoRsva = 'Out', Venta".$currency." + OtrosIngresos".$currency." + Egresos".$currency.",0)) AS MontoOut,
+    IF(gpoTipoRsva != 'Out'  AND ml.asesor >= 0, IF(dtCreated BETWEEN @inicio AND date_add(@fin, INTERVAL 1 DAY),
+        Localizador,
+        NULL),NULL) AS NewLocIn,
+    IF(gpoTipoRsva != 'Out'  AND ml.asesor =-1, IF(dtCreated BETWEEN @inicio AND date_add(@fin, INTERVAL 1 DAY),
+        Localizador,
+        NULL),NULL) AS NewLocOnline,
+    IF(gpoTipoRsva = 'Out', IF(dtCreated BETWEEN @inicio AND date_add(@fin, INTERVAL 1 DAY),
+        Localizador,
+        NULL),NULL) AS NewLocOut, gpoTipoRsva
+FROM
+    t_hoteles_test a LEFT JOIN t_masterlocators ml ON a.Localizador=masterlocatorid
+        LEFT JOIN
+    chanGroups b ON a.chanId = b.id
+        LEFT JOIN
+    dep_asesores c ON ml.asesor = c.asesor
+        AND a.Fecha = c.Fecha
+        LEFT JOIN
+    config_tipoRsva d ON IF(c.dep IS NULL, IF(ml.asesor = - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
+                                            AND IF(ml.tipo IS NULL OR ml.tipo='',0, ml.tipo) = d.tipo
+WHERE
+    a.chanId IN (".$params['chanIds'].")
+        AND a.Fecha BETWEEN @inicio AND @fin
+GROUP BY a.Fecha, Localizador");
     
     $this->db->query("DROP TEMPORARY TABLE IF EXISTS afCallsRAW");
     $this->db->query("CREATE TEMPORARY TABLE afCallsRAW

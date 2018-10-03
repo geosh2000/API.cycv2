@@ -549,7 +549,7 @@ class VentaMonitor extends REST_Controller {
                         WHEN Desconexion = 'Abandono' THEN 'Abandon'
                         ELSE 'IN'
                     END
-                WHEN dep = 29 THEN 
+                WHEN dep IN (29,56) THEN 
                     CASE
                         WHEN cc IS NOT NULL THEN 'Mixcoac'
                         ELSE 'PDV'

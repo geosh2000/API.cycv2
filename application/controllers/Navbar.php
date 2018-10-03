@@ -46,4 +46,101 @@ class Navbar extends REST_Controller {
       errResponse('Error al cargar menú', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
     }
   }
+
+  public function avisosPdv_get(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $this->db->select("*,
+                          NOMBREASESOR(asesor, 1) AS Creador,
+                          NOMBREASESOR(updater, 1) AS Modifico", FALSE)
+            ->from('avisos_pdv')
+            ->where('dtCreated >=', 'CURDATE()', FALSE);
+        
+        if( $q = $this->db->get() ){
+            
+            okResponse( 'Info Obtenida', 'data', $q->result_array(), $this, 'filters', null);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+        return true;
+    });
+  
+    jsonPrint( $result );
+  }
+
+  public function avisosPdvUpd_Put(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $data = $this->put();
+
+        $st = 0;
+        if( $data['status'] ){
+          $st = 1;
+        }
+
+        $upd = array(
+          'status' => $st,
+          'updater' => $_GET['usid']
+        );
+
+        $this->db->set($upd)->where('id', $data['id']);
+        
+        if( $q = $this->db->update('avisos_pdv') ){
+            
+            okResponse( 'Info Actualizada', 'data', true, $this, 'filters', null);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+        return true;
+    });
+  
+    jsonPrint( $result );
+  }
+
+  public function pdvAdvSave_put(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $data = $this->put();
+
+        $this->db->set($data)->set('asesor', $_GET['usid']);
+        
+        if( $q = $this->db->insert('avisos_pdv') ){
+            
+            okResponse( 'Info Guardada', 'data', true, $this, 'filters', null);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+        return true;
+    });
+  
+    jsonPrint( $result );
+  }
+
+  public function deletePdvAdv_put(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $data = $this->put();
+
+        $this->db->where($data);
+        
+        if( $q = $this->db->delete('avisos_pdv') ){
+            
+            okResponse( 'Info Borrada', 'data', true, $this, 'filters', null);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+        return true;
+    });
+  
+    jsonPrint( $result );
+  }
 }
+

@@ -864,7 +864,14 @@ class Cuartiles extends REST_Controller {
             // =================================================
             // START BO
             // =================================================
-                if($skill == 6){
+                $isBoQ = $this->db->select('isBO')->from('PCRCs')->where('id', $skill)->get();
+                $isBoR = $isBoQ->row_array();
+                $isBo = false;
+                // okResponse('data','data',$isBoR,$this);
+                if( $isBoR['isBO'] == "1" ){ $isBo = true; }
+
+
+                if( $isBo == true ){
                     
                     $this->db->query("DROP TEMPORARY TABLE IF EXISTS boSes");
                     $this->db->query("CREATE TEMPORARY TABLE boSes
@@ -884,7 +891,7 @@ class Cuartiles extends REST_Controller {
                             AND CAST(login AS DATE) = b.Fecha
                     WHERE
                         login BETWEEN @inicio AND ADDDATE(@fin, 1)
-                            AND dep = 6
+                            AND dep = $skill
                             AND vacante IS NOT NULL 
                             AND puesto != 11
                     GROUP BY a.asesor, Fecha");
@@ -1117,7 +1124,7 @@ class Cuartiles extends REST_Controller {
             // =================================================
             // START INBOUND
             // =================================================
-                if($skill != 6){
+                if( !$isBo ){
 
 
                     $this->db->query("DROP TEMPORARY TABLE IF EXISTS byDay");
@@ -1241,7 +1248,7 @@ class Cuartiles extends REST_Controller {
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
             $query = "SELECT DISTINCT
-                        dep, Departamento
+                        dep, Departamento, isBO
                     FROM
                         graf_dailySale a
                             LEFT JOIN
