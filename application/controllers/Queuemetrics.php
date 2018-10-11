@@ -317,8 +317,9 @@ class Queuemetrics extends REST_Controller {
                       LEFT JOIN
                   PCRCs b ON a.monShow = b.id
               WHERE
-                  active = 1 AND direction = 1
-                      AND sede IS NOT NULL
+                  active = 1 
+                  -- AND direction = 1
+                  AND sede IS NOT NULL
               ORDER BY
               shortName";
 
@@ -361,6 +362,136 @@ class Queuemetrics extends REST_Controller {
 
     if( $q = $this->db->get() ){
       okResponse("'Info Obtenida", "data", $q->row_array(), $this, 'count', count($data));
+    }else{
+      errResponse("Error en base de datos",REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+    }
+
+  }
+
+  private function callStatsGenerator($params, $dt){
+    if( $dt != 'forecast' ){
+      $this->db->select("SUM(calls) as Offered")
+              ->select("SUM(IF(grupo != 'abandon',COALESCE(calls,0),0)) as Answered")
+              ->select("SUM(IF(grupo = 'abandon',COALESCE(calls,0),0)) as Abandoned")
+              ->select("SUM(IF(grupo = 'pdv',COALESCE(calls,0),0)) as PDV")
+              ->select("SUM(IF(grupo = 'apoyo',COALESCE(calls,0),0)) as apoyo")
+              ->select("SUM(IF(grupo = 'main',COALESCE(calls,0),0)) as main")
+              ->select("SUM(IF(grupo != 'abandon',tt,0))/SUM(IF(grupo != 'abandon',COALESCE(calls,0),0)) as AHT")
+              ->select("SUM(IF(grupo = 'pdv',tt,0))/SUM(IF(grupo = 'pdv',COALESCE(calls,0),0)) as AHT_pdv")
+              ->select("SUM(IF(grupo = 'apoyo',tt,0))/SUM(IF(grupo = 'apoyo',COALESCE(calls,0),0)) as AHT_apoyo")
+              ->select("SUM(IF(grupo = 'main',tt,0))/SUM(IF(grupo = 'main',COALESCE(calls,0),0)) as AHT_main")
+              ->select("SUM(IF(grupo != 'abandon',COALESCE(sla20,0),0)) as sla20")
+              ->select("SUM(IF(grupo != 'abandon',COALESCE(sla30,0),0)) as sla30")
+              ->select("SUM(ROUND(volumen*COALESCE(participacion,0))) as forecast")
+              ->select("'$dt' as dt")
+              ->from('calls_summary a')
+              ->join('forecast_volume fv', 'a.Fecha = fv.Fecha AND fv.skill='.$params['skill'], 'left')
+              ->join('forecast_participacion fp', 'a.Fecha = fp.Fecha AND fp.Hora = HOUR(a.Hora)*2+IF(Minute(a.Hora)=30,1,0) AND fp.skill='.$params['skill'], 'left', FALSE)
+              ->where(array('a.skill' => $params['skill'], 'direction' => 1))
+              ->order_by('H')
+              ->group_by('H');
+    }else{
+      $this->db->select("b.Fecha,
+                          Hora_time,
+                          SUM(ROUND(volumen * participacion)) AS Offered", FALSE)
+                ->from('HoraGroup_Table a')
+                ->join('forecast_participacion b','a.Hora_int = b.hora','left')
+                ->join('forecast_volume c','b.Fecha = c.Fecha AND b.skill = c.skill','left')
+                ->where('b.skill', $params['skill'])
+                ->order_by('H')
+                ->group_by('H');
+    }
+
+            switch($dt){
+              case 'forecast':
+                $this->db->where('b.Fecha BETWEEN ', "'".$params['inicio']."' AND '".$params['fin']."'", FALSE);
+                break;
+              case 'td':
+                $this->db->where('a.Fecha BETWEEN ', "'".$params['inicio']."' AND '".$params['fin']."'", FALSE);
+                break;
+              case 'lw':
+                $this->db->where('a.Fecha BETWEEN ', "date_add('".$params['inicio']."', INTERVAL -7 DAY) AND date_add('".$params['fin']."', INTERVAL -7 DAY)", FALSE);
+                break;
+              case 'ly':
+                $this->db->where('a.Fecha BETWEEN ', "date_add('".$params['inicio']."', INTERVAL -364 DAY) AND date_add('".$params['fin']."', INTERVAL -364 DAY)", FALSE);
+                break;
+            }
+
+            switch( $params['groupBy'] ){
+              case 'hora':
+                if( $dt != 'forecast' ){
+                  $this->db->select("CAST(CONCAT(a.Fecha,' ',CONCAT(HOUR(a.Hora),IF(MINUTE(a.Hora)>=30,':30:00',':00:00'))) as DATETIME) as H", FALSE);
+                }else{
+                  $this->db->select("CAST(CONCAT(b.Fecha,' ',CONCAT(HOUR(Hora_time),IF(MINUTE(Hora_time)>=30,':30:00',':00:00'))) as DATETIME) as H", FALSE);
+                }
+                break;
+              case 'dia':
+                if( $dt != 'forecast' ){
+                  $this->db->select("CAST(CONCAT(a.Fecha,' 00:00:00') as DATETIME) as H", FALSE);
+                }else{
+                  $this->db->select("CAST(CONCAT(b.Fecha,' 00:00:00') as DATETIME) as H", FALSE);
+                }
+                break;
+              case 'mes':
+                if( $dt != 'forecast' ){
+                  $this->db->select("CAST(CONCAT(YEAR(a.Fecha),'-',MONTH(a.Fecha),'-01 00:00:00') as DATETIME) as H", FALSE);
+                }else{
+                  $this->db->select("CAST(CONCAT(YEAR(b.Fecha),'-',MONTH(b.Fecha),'-01 00:00:00') as DATETIME) as H", FALSE);
+                }
+                break;
+              case 'inDay':
+                if( $dt != 'forecast' ){
+                  $this->db->select("CAST(CONCAT('$fin ',CONCAT(HOUR(a.Hora),IF(MINUTE(a.Hora)>=30,':30:00',':00:00'))) as DATETIME) as H", FALSE);
+                }else{
+                  $this->db->select("CAST(CONCAT('$fin ',CONCAT(HOUR(Hora_time),IF(MINUTE(Hora_time)>=30,':30:00',':00:00'))) as DATETIME) as H", FALSE);
+                }
+                break;
+            }
+  }
+
+  public function callStats_put(){
+
+    $params = $this->put();
+
+    //Totales
+    $this->db->select("SUM(calls) as Offered")
+            ->select("SUM(IF(grupo != 'abandon',calls,0)) as Answered")
+            ->select("SUM(IF(grupo = 'abandon',calls,0)) as Abandoned")
+            ->select("SUM(IF(grupo = 'pdv',calls,0)) as PDV")
+            ->select("SUM(IF(grupo = 'apoyo',calls,0)) as apoyo")
+            ->select("SUM(IF(grupo = 'main',calls,0)) as main")
+            ->select("SUM(IF(grupo != 'abandon',sla20,0)) as sla20")
+            ->select("SUM(IF(grupo != 'abandon',sla30,0)) as sla30")
+            ->from('calls_summary')
+            ->where('Fecha BETWEEN ', "'".$params['inicio']."' AND '".$params['fin']."'", FALSE)
+            ->where(array('skill' => $params['skill'], 'direction' => 1));
+            
+    if( $tot = $this->db->get() ){
+
+      $dates = array('td', 'lw', 'ly', 'forecast');
+      $q = array();
+
+      foreach( $dates as $index => $dt ){
+        $this->callStatsGenerator( $params, $dt );
+        if( $dt == 'ly' ){
+          // okResponse('query', 'data', $this->db->get_compiled_select(), $this);
+        }
+        $q[$dt] = $this->db->get();
+      }
+
+      $result = array( 'forecast' => array(), 'td' => array(), 'ly' => array(), 'lw' => array(), 'total' => $tot->row_array() );
+
+        foreach($q as $ind => $datos){
+          foreach($datos->result_array() as $index => $info){
+            array_push( $result[$ind], $info );
+          }
+        }
+
+        $lq = $this->db->query("SELECT MAX(Last_Update) as lu FROM calls_summary WHERE Fecha='".$params['fin']."'");
+        $lr = $lq->row_array();
+
+        okResponse("Info Obtenida", "data", $result, $this, 'lu', $lr['lu']);
+
     }else{
       errResponse("Error en base de datos",REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
     }

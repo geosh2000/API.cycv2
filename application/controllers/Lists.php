@@ -201,10 +201,17 @@ class Lists extends REST_Controller {
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
             $this->db->select("a.*,
-                CONCAT(displayNameShort, ' - ', cityForListing) AS displayNameList", FALSE)
+                CONCAT(
+                    CASE 
+                        WHEN a.id = 137 THEN 'Contact Center'
+                        WHEN a.id = 440 THEN 'Contact Center'
+                        ELSE TRIM(displayNameShort)
+                    END, ' - ', cityForListing) AS displayNameList", FALSE)
                 ->from('PDVs a')
                 ->join('cat_zones b', 'a.branchZoneId = b.id', 'left')
-                ->where('Activo',1);
+                ->where('Activo',1)
+                ->or_where('a.id',137)
+                ->or_where('a.id',440);
             
             if( $q = $this->db->get() ){
                 
@@ -218,6 +225,37 @@ class Lists extends REST_Controller {
         });
       
         jsonPrint( $result );
+    }
+
+    public function depList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $calls = $this->uri->segment(4);
+            
+            $this->db->from('PCRCs')
+                    ->order_by('Departamento');
+            
+            if( isset($pais) && $pais != 0 ){ 
+                $this->db->where('sede', $pais);
+            }
+
+            if( isset($calls) ){ 
+                $this->db->where('inbound_calls', $calls);
+            }
+                    
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
     }
 
 }

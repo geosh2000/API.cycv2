@@ -56,11 +56,12 @@ class Pausemon extends REST_Controller {
               ->where('a.asesor !=', 0)
               ->where('Inicio >=', $date)
               ->where('Inicio <=', $date." 23:59:59")
-              ->where('b.operacion', $pais)
               ->order_by('Inicio');
         
       if( isset($asesor) ){
-          $this->db->where('a.asesor', $asesor);
+        $this->db->where('a.asesor', $asesor);
+      }else{
+        $this->db->where('b.operacion', $pais);
       }
 
       // okResponse( "Pausas obtenidas", 'data', $this->db->get_compiled_select(), $this );

@@ -57,7 +57,7 @@ class Rrhh extends REST_Controller {
                           c.Operacion,
                           e.id AS evaluacion,
                           IF(vacante IS NULL, 0, 1) as Activo,
-                          IF(fin BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 15 DAY)
+                          IF(fin BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 20 DAY)
                                   AND activo = 1
                                   AND deleted = 0
                                   AND e.id IS NULL,
@@ -70,8 +70,8 @@ class Rrhh extends REST_Controller {
                 ->join('asesores_evaluacionD e','a.asesor = e.asesor
                       AND a.id = e.contrato','left')
                 ->where('tipo', 1)
-                ->having('createNew',1)
-                ->or_having('evaluacion IS NOT NULL')
+                // ->having('createNew',1)
+                // ->or_having('evaluacion IS NOT NULL')
                 ->order_by('Nombre, fin DESC');
         
         if( isset($filters['asesor']) ){
