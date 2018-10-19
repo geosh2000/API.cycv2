@@ -258,4 +258,170 @@ class Lists extends REST_Controller {
       
     }
 
+    public function fDepList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $isVenta = $this->uri->segment(3);
+            $isSoporte = $this->uri->segment(4);
+            $pais = $this->uri->segment(5);
+            
+            $this->db->select("id,
+                                sede, 
+                                f_name,
+                                CONCAT(sede,' - ',f_name) as displayName,
+                                f_skin AS skin,
+                                f_skout AS skout,
+                                CONCAT('(', f_skills, ')') AS skill,
+                                f_marca AS marca,
+                                f_mp AS mp")
+                    ->from('PCRCs')
+                    ->where('isTablaF', 1)
+                    ->where('isSoporte', $isSoporte)
+                    ->where('isVenta', $isVenta)
+                    ->order_by('displayName');
+            
+            if( isset($pais) ){
+                $this->db->where('sede', $pais);
+            }
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function pdvSupList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("asesor, NOMBREASESOR(asesor, 1) AS Nombre, NOMBREASESOR(asesor, 2) AS NombreCompleto")
+                    ->from('dep_asesores a')
+                    ->join('PCRCs b', 'a.dep = b.id', 'left')
+                    ->where('Fecha', $fecha)
+                    ->where('sede', $pais)
+                    ->where('puesto', 11)
+                    ->where('vacante IS NOT ', 'NULL', FALSE)
+                    ->where_in('dep', array(29,56))
+                    ->order_by('Nombre');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function ccSupList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("asesor, NOMBREASESOR(asesor, 1) AS Nombre, NOMBREASESOR(asesor, 2) AS NombreCompleto")
+                    ->from('dep_asesores a')
+                    ->join('PCRCs b', 'a.dep = b.id', 'left')
+                    ->where('Fecha', $fecha)
+                    ->where('sede', $pais)
+                    ->where_in('puesto', array(11,17,18,19,20,21,37,38,39,40,41,42,45))
+                    ->where('vacante IS NOT ', 'NULL', FALSE)
+                    ->where_not_in('dep', array(29,56))
+                    ->order_by('Nombre');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function pdvModuleList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("a.id,
+                                PDV,
+                                TRIM(displayNameShort) as displayNameShort,
+                                b.Ciudad,
+                                cityForListing,
+                                FINDSUPERDAYPDV('$fecha', a.id, 3) AS Supervisor,
+                                FINDSUPERDAYPDV('$fecha', a.id, 2) AS SupervisorName")
+                    ->from('PDVs a')
+                    ->join('cat_zones b', 'a.ciudad = b.id', 'left')
+                    ->group_start()
+                        ->where('Activo', 1)
+                        ->or_where('PDV LIKE', "'%General%'", FALSE)
+                    ->group_end()
+                    ->where('pais', $pais)
+                    ->order_by('displayNameShort');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function ccAsesoresSupList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("a.asesor,
+                                TRIM(NOMBREASESOR(a.asesor,2)) as displayNameShort,
+                                b.Departamento,
+                                NOMBREPUESTO(puesto) as puesto,
+                                FINDSUPERDAYCC('$fecha', a.asesor, 3) AS Supervisor,
+                                FINDSUPERDAYCC('$fecha', a.asesor, 2) AS SupervisorName")
+                    ->from('dep_asesores a')
+                    ->join('PCRCs b', 'a.dep=b.id', 'left')
+                    ->where('vacante IS NOT ', "NULL", FALSE)
+                    ->where('sede', $pais)
+                    ->where('Fecha', $fecha)
+                    ->where('puesto !=', 20)
+                    ->where_not_in('dep', array(29,56))
+                    ->order_by('displayNameShort');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
 }

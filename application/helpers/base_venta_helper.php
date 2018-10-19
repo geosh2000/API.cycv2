@@ -39,28 +39,34 @@ class venta_help{
         }
     }
 
-  public static function ventaF($class, $inicio, $fin, $type, $td=false, $skill, $ag = false){
-
-    $params = array(
-        '3'     => array( 'skin' => '3', 'skout' => '52', 'skill' => "(3,52)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-        '7'     => array( 'skin' => '7', 'skout' => '7', 'skill' => "(7)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-        '8'     => array( 'skin' => '8', 'skout' => '8', 'skill' => "(8)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-        '9'     => array( 'skin' => '9', 'skout' => '9', 'skill' => "(9)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-        '4'     => array( 'skin' => '4', 'skout' => '4', 'skill' => "(4)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-        '35'    => array( 'skin' => '35', 'skout' => '5', 'skill' => "(35,5,50)", 'marca' => "'Marcas Propias'", 'mp' => true )
-    );
+  public static function ventaF($class, $inicio, $fin, $type, $td=false, $skill, $params, $ag = false){
 
     $fecha = "a.Fecha BETWEEN";
     $fechaVar = "'$inicio' AND '$fin'";
+    switch($params['sede']){
+        case 'CO':
+            $currency = 'COP';
+            $margen = "costoCOP";
+            break;
+        case 'MX':
+            $currency = 'MXN';
+            $margen = "costo";
+            break;
+        default:
+            $currency = 'MXN';
+            $margen = "costo";
+            break;
+    }
 
     $class->db->query("DROP TEMPORARY TABLE IF EXISTS locsProdF");
 
     $class->db->select('a.*, ml.tipo')
             ->select("  CASE 
-                        WHEN ml.asesor = 0 AND 3 != ".$params[$skill]['skin']." THEN 0
+                        WHEN ml.asesor = 0 AND 3 != ".$params['skin']." THEN 0
                         WHEN tipoRsva LIKE '%Tag%' THEN 50 
-                        WHEN tipoRsva LIKE '%Out' THEN ".$params[$skill]['skout']."
-                        WHEN tipoRsva LIKE '%IN' THEN ".$params[$skill]['skin']."
+                        WHEN tipoRsva LIKE '%CO_Hoteles%' THEN 73 
+                        WHEN tipoRsva LIKE '%Out' THEN ".$params['skout']."
+                        WHEN tipoRsva LIKE '%IN' THEN ".$params['skin']."
                         WHEN tipoRsva LIKE '%Presencial%' THEN 29 ELSE 0 END as Skill,
                     CASE
                         WHEN ml.asesor = 0 THEN 'Otros'
@@ -90,38 +96,38 @@ class venta_help{
                             END
                         ELSE 'CC'
                     END AS Grupo,
-                    SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS monto,
+                    SUM(Venta$currency + OtrosIngresos$currency + Egresos$currency) AS monto,
                     SUM(IF(servicio = 'Hotel',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                        Venta$currency + OtrosIngresos$currency + Egresos$currency,
                         0)) AS monto_hotel,
                     SUM(IF(servicio = 'Tour',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                        Venta$currency + OtrosIngresos$currency + Egresos$currency,
                         0)) AS monto_tour,
                     SUM(IF(servicio = 'Transfer',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                        Venta$currency + OtrosIngresos$currency + Egresos$currency,
                         0)) AS monto_transfer,
                     SUM(IF(servicio = 'Vuelo',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                        Venta$currency + OtrosIngresos$currency + Egresos$currency,
                         0)) AS monto_vuelo,
                     SUM(IF(servicio = 'Seguro',
-                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                        Venta$currency + OtrosIngresos$currency + Egresos$currency,
                         0)) AS monto_seguro,
                     SUM(clientNights) AS RNs,
-                    SUM(costo) AS margen,
+                    SUM($margen) AS margen,
                     IF(tipoRsva LIKE '%OUT%'
                             AND IF(dtCreated BETWEEN a.Fecha AND ADDDATE(a.Fecha, 1),
                             a.Localizador,
                             NULL) IS NOT NULL
-                            AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
+                            AND SUM(Venta$currency + OtrosIngresos$currency + Egresos$currency) > 0,
                         a.Localizador,
                         NULL) AS CountLocOut,
                     IF(tipoRsva LIKE '%IN%'
                             AND IF(dtCreated BETWEEN a.Fecha AND ADDDATE(a.Fecha, 1),
                             a.Localizador,
                             NULL) IS NOT NULL
-                            AND SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) > 0,
+                            AND SUM(Venta$currency + OtrosIngresos$currency + Egresos$currency) > 0,
                         a.Localizador,
-                        NULL) AS CountLocIn", FALSE)
+                        NULL) AS CountLocIn, servicio", FALSE)
             ->from("t_hoteles_test a")
             ->join("t_masterlocators ml", "a.Localizador = ml.masterlocatorid", 'left')
             ->join("chanGroups b", "a.chanId = b.id", 'left')
@@ -131,24 +137,23 @@ class venta_help{
             ->join("t_margen d", "a.Localizador = d.Localizador AND a.item = d.Item AND a.Fecha = d.Fecha AND a.Hora=d.Hora", 'left', FALSE)
             ->join("config_tipoRsva tp", "IF(dp.dep IS NULL,
                     IF(ml.asesor = - 1, - 1, 0),
-                    IF(dp.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
-                        0,
-                        IF(dp.dep = 29 AND cc IS NOT NULL,
+                    IF(dp.dep = 29 AND cc IS NOT NULL,
                             35,
-                            dp.dep))) = tp.dep
+                            dp.dep)) = tp.dep
                     AND IF(ml.tipo IS NULL OR ml.tipo = '',
                     0,
                     ml.tipo) = tp.tipo", 'left', FALSE)
             ->where($fecha, $fechaVar, FALSE)
             ->group_by(array('Fecha','Localizador', 'item'));
 
-    if( $params[$skill]['mp'] ){
-        $class->db->where( array( 'marca' => 'Marcas Propias', 'pais' => 'MX' ) );
+    if( $params['mp'] ){
+        $class->db->where( array( 'marca' => 'Marcas Propias', 'pais' => $params['sede'] ) );
     }else{
-        $class->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Avianca') )
-                ->where( array( 'gpoCanalKpi !=' => 'Outlet') )
-                ->where( array( 'gpoCanalKpi !=' => 'COOMEVA') );
-                if( !$ag ){$class->db->where( array( 'gpoCanalKpi !=' => 'Agencias') );}
+        if( $params['sede'] == 'MX' ){
+            $class->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Avianca') )
+                    ->where( array( 'gpoCanalKpi !=' => 'Outlet') );
+                }
+        if( $params['isAgency'] == 0 ){$class->db->where( array( 'gpoCanalKpi !=' => 'Agencias') );}
     }
 
     $tableLocs = $class->db->get_compiled_select();

@@ -757,53 +757,65 @@ class Headcount extends REST_Controller {
   }
 
   public $hcQuery = "SELECT 
-                      ap.id,
-                      md.nombre AS mainDep,
-                      udn.nombre AS udn,
-                      a.nombre AS area,
-                      d.nombre AS dep,
-                      p.nombre AS puesto,
-                      pr.Puesto AS copc,
-                      PDV, mn.Ciudad,
-                      inicio, fin, ap.esquema, ap.comentarios,
-                      NOMBREASESOR(approbed_by,1) as aprobadaPor, date_approbed,
-                      CONCAT(md.clave, md.id) as mainDepId,
-                      CONCAT(udn.clave, udn.id) as udnId,
-                      CONCAT(a.clave, a.id) as areaId,
-                      CONCAT(d.clave, d.id) as depId,
-                      CONCAT(p.clave, p.id) as puestoId,
-                      CONCAT(pr.id, p.id) as copcId,
-                      md.clave AS mainDepClave,
-                      udn.clave AS udnClave,
-                      a.clave AS areaClave,
-                      d.clave AS depClave,
-                      p.clave AS puestoClave,
-                      NOMBREASESOR(dp.asesor,2) as NombreAsesor,
-                      fechaLiberacionVacante(ap.id) as ultimaLiberacion
-                    FROM
-                      asesores_plazas ap
-                          LEFT JOIN
-                      hc_codigos_Puesto p ON ap.hc_puesto = p.id
-                          LEFT JOIN
-                      hc_codigos_Departamento d ON p.departamento = d.id
-                          LEFT JOIN
-                      hc_codigos_Areas a ON d.area = a.id
-                          LEFT JOIN
-                      hc_codigos_UnidadDeNegocio udn ON a.unidadDeNegocio = udn.id
-                          LEFT JOIN
-                      hc_mainDep md ON udn.mainDepId = md.id
-                          LEFT JOIN 
-                      PCRCs_puestos pr ON pr.id=ap.puesto
-                          LEFT JOIN
-                      dep_asesores dp ON ap.id = dp.vacante
-                          AND dp.Fecha = ADDDATE(CURDATE(),15)
-                          LEFT JOIN
-                      PDVs pdv ON ap.oficina=pdv.id
-                          LEFT JOIN
-                          cat_zones mn ON ap.ciudad=mn.id
-                    WHERE
-                      ap.Activo = 1 AND ap.Status=1 AND ap.fin>CURDATE() AND ap.hc_dep IS NOT NULL
-                    ORDER BY udn.nombre, a.nombre, d.nombre, p.nombre, PDV, NombreAsesor";
+                        ap.id,
+                        md.nombre AS mainDep,
+                        udn.nombre AS udn,
+                        a.nombre AS area,
+                        d.nombre AS dep,
+                        p.nombre AS puesto,
+                        pr.Puesto AS copc,
+                        pdv.PDV,
+                        mn.Ciudad,
+                        inicio,
+                        fin,
+                        ap.esquema,
+                        ap.comentarios,
+                        NOMBREASESOR(approbed_by, 1) AS aprobadaPor,
+                        date_approbed,
+                        CONCAT(md.clave, md.id) AS mainDepId,
+                        CONCAT(udn.clave, udn.id) AS udnId,
+                        CONCAT(a.clave, a.id) AS areaId,
+                        CONCAT(d.clave, d.id) AS depId,
+                        CONCAT(p.clave, p.id) AS puestoId,
+                        CONCAT(pr.id, p.id) AS copcId,
+                        md.clave AS mainDepClave,
+                        udn.clave AS udnClave,
+                        a.clave AS areaClave,
+                        d.clave AS depClave,
+                        p.clave AS puestoClave,
+                        NOMBREASESOR(dp.asesor, 2) AS NombreAsesor,
+                        FECHALIBERACIONVACANTE(ap.id) AS ultimaLiberacion,
+                        RFC AS cedula,
+                        num_colaborador
+                      FROM
+                        asesores_plazas ap
+                            LEFT JOIN
+                        hc_codigos_Puesto p ON ap.hc_puesto = p.id
+                            LEFT JOIN
+                        hc_codigos_Departamento d ON p.departamento = d.id
+                            LEFT JOIN
+                        hc_codigos_Areas a ON d.area = a.id
+                            LEFT JOIN
+                        hc_codigos_UnidadDeNegocio udn ON a.unidadDeNegocio = udn.id
+                            LEFT JOIN
+                        hc_mainDep md ON udn.mainDepId = md.id
+                            LEFT JOIN
+                        PCRCs_puestos pr ON pr.id = ap.puesto
+                            LEFT JOIN
+                        dep_asesores dp ON ap.id = dp.vacante
+                            AND dp.Fecha = CURDATE()
+                            LEFT JOIN
+                        PDVs pdv ON ap.oficina = pdv.id
+                            LEFT JOIN
+                        cat_zones mn ON ap.ciudad = mn.id
+                            LEFT JOIN
+                        Asesores asr ON dp.asesor = asr.id
+                      WHERE
+                        ap.Activo = 1 AND ap.Status = 1
+                            AND (ap.fin > CURDATE()
+                            OR dp.vacante IS NOT NULL)
+                            AND ap.hc_dep IS NOT NULL
+                      ORDER BY udn.nombre , a.nombre , d.nombre , p.nombre , PDV , NombreAsesor";
 
   public function hcVacantes_get(){
 

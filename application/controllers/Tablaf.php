@@ -17,7 +17,7 @@ class Tablaf extends REST_Controller {
     $this->load->database();
   }
 
-  public function mp_get(){
+  public function mp_put(){
     
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
@@ -43,14 +43,20 @@ class Tablaf extends REST_Controller {
             }
 
             // Definición de parámetros por skill
-            $params = array(
-                '3'     => array( 'skin' => '3', 'skout' => '52', 'skill' => "(3,52)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-                '7'     => array( 'skin' => '7', 'skout' => '7', 'skill' => "(7)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-                '8'     => array( 'skin' => '8', 'skout' => '8', 'skill' => "(8)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-                '9'     => array( 'skin' => '9', 'skout' => '9', 'skill' => "(9)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-                '4'     => array( 'skin' => '4', 'skout' => '4', 'skill' => "(4)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
-                '35'    => array( 'skin' => '35', 'skout' => '5', 'skill' => "(35,5,50)", 'marca' => "'Marcas Propias'", 'mp' => true )
-            );
+            // $params = array(
+            //     '3'     => array( 'skin' => '3', 'skout' => '52', 'skill' => "(3,52)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+            //     '7'     => array( 'skin' => '7', 'skout' => '7', 'skill' => "(7)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+            //     '8'     => array( 'skin' => '8', 'skout' => '8', 'skill' => "(8)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+            //     '9'     => array( 'skin' => '9', 'skout' => '9', 'skill' => "(9)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+            //     '4'     => array( 'skin' => '4', 'skout' => '4', 'skill' => "(4)", 'marca' => "'Marcas Terceros'", 'mp' => false ),
+            //     '35'    => array( 'skin' => '35', 'skout' => '5', 'skill' => "(35,5,50)", 'marca' => "'Marcas Propias'", 'mp' => true )
+            // );
+            $params = $this->put();
+            if( $params['mp'] == 1 ){
+                $params['mp'] = true;
+            }else{
+                $params['mp'] = false;
+            }
         // =================================================
         // END Params
         // =================================================
@@ -60,7 +66,7 @@ class Tablaf extends REST_Controller {
         // =================================================
             $this->db->query("SET @inicio = CAST('$inicio' as DATE)");
             $this->db->query("SET @fin = CAST('$fin' as DATE)");
-            $this->db->query("SET @marca = ".$params[$skill]['marca']);
+            $this->db->query("SET @marca = '".$params['marca']."'");
         // =================================================
         // END Definición de variables para query
         // =================================================
@@ -68,7 +74,7 @@ class Tablaf extends REST_Controller {
         // =================================================
         // START Query Locs
         // =================================================
-            venta_help::ventaF($this, $inicio, $fin, false, false, $skill, $ag);
+            venta_help::ventaF($this, $inicio, $fin, false, false, $skill, $params, $ag);
         // =================================================
         // END Query Locs
         // =================================================
@@ -89,6 +95,7 @@ class Tablaf extends REST_Controller {
                         SUM(monto_seguro) AS monto_seguro,
                         SUM(RNs) AS RN,
                         SUM(margen) AS margen,
+                        SUM(IF(servicio = 'Hotel',margen,0)) AS margen_hotel,
                         COUNT(DISTINCT CountLocOut) AS LocsOut,
                         COUNT(DISTINCT CountLocIn) AS LocsIn
                     FROM
@@ -109,8 +116,8 @@ class Tablaf extends REST_Controller {
             $this->db->query("CREATE TEMPORARY TABLE calls SELECT 
                     a.*, CASE
                         WHEN a.asesor=0 THEN 'Otros'
-                        WHEN dep=29 AND cc IS NULL THEN 'PDV'
-                        WHEN dep=29 AND cc IS NOT NULL THEN 'Apoyo'
+                        WHEN dep IN (29,56) AND cc IS NULL THEN 'PDV'
+                        WHEN dep IN (29,56) AND cc IS NOT NULL THEN 'Apoyo'
                         WHEN Skill = 5 THEN 
                         CASE 
                             WHEN dep=5 THEN 'CC'
@@ -131,7 +138,7 @@ class Tablaf extends REST_Controller {
                         AND a.Fecha BETWEEN d.inicio AND d.fin
                 WHERE
                     a.Fecha BETWEEN @inicio AND @fin
-                HAVING Skill IN ".$params[$skill]['skill']);
+                HAVING Skill IN ".$params['skill']);
         // =================================================
         // END Query Calls
         // =================================================
@@ -152,7 +159,7 @@ class Tablaf extends REST_Controller {
                                     AND CAST(login AS DATE) BETWEEN d.inicio AND d.fin
                             WHERE
                                 login BETWEEN @inicio AND CAST(CONCAT(@fin, ' 23:59:00') AS DATETIME)
-                                    AND skill IN ".$params[$skill]['skill']);
+                                    AND skill IN ".$params['skill']);
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS logsOK");
             $query = "SELECT 
@@ -160,8 +167,8 @@ class Tablaf extends REST_Controller {
                                 skill,
                                 CASE
                                     WHEN asesor=0 THEN 'Otros'
-                                    WHEN dep=29 AND cc IS NULL THEN 'PDV'
-                                    WHEN dep=29 AND cc IS NOT NULL THEN 'Apoyo'
+                                    WHEN dep IN (29,56) AND cc IS NULL THEN 'PDV'
+                                    WHEN dep IN (29,56) AND cc IS NOT NULL THEN 'Apoyo'
                                     WHEN skill = 5 THEN 
                                     CASE 
                                         WHEN dep=5 THEN 'CC'
@@ -197,7 +204,7 @@ class Tablaf extends REST_Controller {
                                         AND CAST(a.Inicio AS DATE) BETWEEN d.inicio AND d.fin
                                 WHERE
                                     a.Inicio BETWEEN @inicio AND CAST(CONCAT(@fin, ' 23:59:00') AS DATETIME)
-                                        AND skill IN ".$params[$skill]['skill']);
+                                        AND skill IN ".$params['skill']);
 
                                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS pauseOK");
                                 $this->db->query("CREATE TEMPORARY TABLE pauseOK SELECT 
@@ -205,8 +212,8 @@ class Tablaf extends REST_Controller {
                                     skill,
                                     CASE
                                         WHEN asesor=0 THEN 'Otros'
-                                        WHEN dep=29 AND cc IS NULL THEN 'PDV'
-                                        WHEN dep=29 AND cc IS NOT NULL THEN 'Apoyo'
+                                        WHEN dep IN (29,56) AND cc IS NULL THEN 'PDV'
+                                        WHEN dep IN (29,56) AND cc IS NOT NULL THEN 'Apoyo'
                                         WHEN skill = 5 THEN 
                                         CASE 
                                             WHEN dep=5 THEN 'CC'
@@ -312,6 +319,7 @@ class Tablaf extends REST_Controller {
                                     COALESCE(monto_tour,0) as monto_tour, 
                                     COALESCE(monto_transfer,0) as monto_transfer, 
                                     COALESCE(monto,0)-COALESCE(margen,0) as margen,
+                                    COALESCE(monto_hotel,0)-COALESCE(margen_hotel,0) as margen_hotel,
                                     COALESCE(RN,0) as RN, 
                                     COALESCE(LocsIn,0) as LocsIn, 
                                     COALESCE(LocsOut,0) as LocsOut, 
@@ -364,6 +372,7 @@ class Tablaf extends REST_Controller {
                                 SUM(monto_tour) as monto_tour, 
                                 SUM(monto_transfer) as monto_transfer, 
                                 SUM(margen) as margen, 
+                                SUM(margen_hotel) as margen_hotel, 
                                 SUM(RN) as RN, 
                                 SUM(LocsIn) as LocsIn, 
                                 SUM(LocsOut) as LocsOut, 

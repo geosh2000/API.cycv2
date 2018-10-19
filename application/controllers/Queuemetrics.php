@@ -335,29 +335,18 @@ class Queuemetrics extends REST_Controller {
     $pais = $this->uri->segment(3);
     $data = $this->put();
 
-    $this->db->query("DROP TEMPORARY TABLE IF EXISTS callsRAW");
-
-    $this->db->query("CREATE TEMPORARY TABLE callsRAW SELECT 
-                          a.*, queue, direction, sede
-                      FROM
-                          t_Answered_Calls a
-                              LEFT JOIN
-                          Cola_Skill b ON a.Cola = b.Cola
-                              LEFT JOIN
-                          PCRCs pr ON b.Skill = pr.id
-                      WHERE
-                          Fecha = CURDATE()
-                      HAVING direction = 1 AND sede='$pais'");
-
-    $this->db->select("COUNT(IF(direction = 1, ac_id, NULL)) AS ofrecidas,
-                        COUNT(IF(direction = 2 AND Answered=1, ac_id, NULL)) AS salientes,
-                        COUNT(IF(Answered = 0 AND direction = 1, ac_id, NULL)) AS abandonadas,
-                        COUNT(IF(Answered = 1 AND Espera<='00:00:20' AND direction = 1, ac_id, NULL)) AS sla20,
-                        COUNT(IF(Answered = 1 AND Espera<='00:00:20' AND direction = 1, ac_id, NULL)) AS sla30", FALSE)
-              ->from('callsRAW');
+    $this->db->select("SUM(IF(direction=1,calls,0)) AS ofrecidas,
+                      SUM(IF(direction = 2 AND grupo!='abandon', calls, 0)) AS salientes,
+                      SUM(IF(direction=1 AND grupo='abandon',calls,0)) AS abandonadas,
+                      SUM(IF(direction=1 AND grupo!='abandon',sla20,0)) AS sla20,
+                      SUM(IF(direction=1 AND grupo!='abandon',sla30,0)) AS sla30", FALSE)
+              ->from('calls_summary a')
+              ->join("PCRCs b", "a.skill = b.id", "left")
+              ->where('Fecha = ', 'CURDATE()', FALSE)
+              ->where('sede', $pais);
     
     if( count($data) > 0 ){
-      $this->db->where_in('queue', $data);
+      $this->db->where_in('qNumber', $data);
     }
 
     if( $q = $this->db->get() ){

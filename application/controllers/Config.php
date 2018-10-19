@@ -156,5 +156,51 @@ class Config extends REST_Controller {
         $this->response($result);
         
     }
+    
+    public function pdvSupAssign_put(){
+        
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+            
+            $data = $this->put();
+
+            if($data['supervisor'] == 'none'){
+              $data['supervisor'] = NULL;
+            }
+
+            $ins = $this->db->set($data)->set('user', $_GET['usid'])->get_compiled_insert('supervisores_pdv');
+            $query = $ins." ON DUPLICATE KEY UPDATE supervisor=VALUES(supervisor), user=VALUES(user)";
+
+            if( $this->db->query($query) ){
+              okResponse( 'Movimiento Guardado', 'data', true, $this );
+            }else{
+              errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+            }
+
+        });
+        
+    }
+    
+    public function ccSupAssign_put(){
+        
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+            
+            $data = $this->put();
+
+            if($data['supervisor'] == 'none'){
+              $data['supervisor'] = NULL;
+            }
+
+            $ins = $this->db->set($data)->set('user', $_GET['usid'])->get_compiled_insert('Supervisores');
+            $query = $ins." ON DUPLICATE KEY UPDATE supervisor=VALUES(supervisor), user=VALUES(user)";
+
+            if( $this->db->query($query) ){
+              okResponse( 'Movimiento Guardado', 'data', true, $this );
+            }else{
+              errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+            }
+
+        });
+        
+    }
 
 }

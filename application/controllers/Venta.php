@@ -1031,8 +1031,8 @@ class Venta extends REST_Controller {
                                     gpoCanalKpi as kpi,
                                     SUM(IF((NewLoc IS NULL AND Venta > 0)
                                         OR Venta > 0, Venta, 0)) as MontoSV,
-                                    SUM(IF((NewLoc IS NULL AND gpoCanalKpi != 'PDV' AND Venta > 0)
-                                        OR Venta > 0, Venta, 0)) as MontoNoShopMontoSV,
+                                    SUM(IF(((NewLoc IS NULL AND Venta > 0)
+                                        OR Venta > 0) AND gpoCanalKpi != 'PDV', Venta, 0)) as MontoNoShopMontoSV,
                                     SUM(IF(NewLoc IS NULL AND Venta < 0,
                                         Venta,
                                         0)) as XldAll", FALSE)
