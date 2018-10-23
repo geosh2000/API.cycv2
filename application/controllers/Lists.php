@@ -272,6 +272,7 @@ class Lists extends REST_Controller {
                                 f_skin AS skin,
                                 f_skout AS skout,
                                 CONCAT('(', f_skills, ')') AS skill,
+                                isVenta, isSoporte, isAgency,
                                 f_marca AS marca,
                                 f_mp AS mp")
                     ->from('PCRCs')

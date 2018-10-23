@@ -142,5 +142,40 @@ class Navbar extends REST_Controller {
   
     jsonPrint( $result );
   }
+
+  public function avisosPdvReport_get(){
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+        $inicio = $this->uri->segment(3);
+        $fin = $this->uri->segment(4);
+
+        $this->db->select("id,CAST(dtCreated as DATE) AS Fecha,
+                            CAST(dtCreated as TIME) AS Hora,
+                            NOMBREPDV(pdv, 3) AS PDV,
+                            NOMBREPDV(pdv, 4) AS Ciudad,
+                            localizador,
+                            NOMBREASESOR(asesor, 2) AS Asesor,
+                            aviso,
+                            IF(status = 1, 'Revisado', '') AS Estado,
+                            NOMBREASESOR(updater, 2) AS ModificadoPor,
+                            Last_Update AS UltimaModificacion", FALSE)
+                  ->from('avisos_pdv')
+                  ->where('dtCreated >=', $inicio)
+                  ->where('dtCreated <', "ADDDATE('$fin',1)",FALSE)
+                  ->order_by('dtCreated');
+        
+        if( $q = $this->db->get() ){
+            
+            okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+        return true;
+    });
+  
+    jsonPrint( $result );
+  }
 }
 

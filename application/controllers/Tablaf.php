@@ -114,31 +114,62 @@ class Tablaf extends REST_Controller {
         // =================================================
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
             $this->db->query("CREATE TEMPORARY TABLE calls SELECT 
-                    a.*, CASE
-                        WHEN a.asesor=0 THEN 'Otros'
-                        WHEN dep IN (29,56) AND cc IS NULL THEN 'PDV'
-                        WHEN dep IN (29,56) AND cc IS NOT NULL THEN 'Apoyo'
-                        WHEN Skill = 5 THEN 
-                        CASE 
-                            WHEN dep=5 THEN 'CC'
-                            ELSE 'Otros'
-                        END
-                        ELSE 'CC'
-                    END as grupo,
-                    Skill, direction
-                FROM
-                    t_Answered_Calls a
-                        LEFT JOIN
-                    Cola_Skill b ON a.Cola = b.Cola
-                        LEFT JOIN
-                    dep_asesores c ON a.asesor = c.asesor
-                        AND a.Fecha = c.Fecha
-                        LEFT JOIN
-                    cc_apoyo d ON a.asesor = d.asesor
-                        AND a.Fecha BETWEEN d.inicio AND d.fin
-                WHERE
-                    a.Fecha BETWEEN @inicio AND @fin
-                HAVING Skill IN ".$params['skill']);
+                                                Fecha,
+                                                Skill,
+                                                CASE
+                                                    WHEN grupo = 'pdv' THEN 'PDV'
+                                                    WHEN grupo = 'Apoyo' THEN 'Apoyo'
+                                                    ELSE CASE
+                                                        WHEN dep = 0 THEN 'Otros'
+                                                        WHEN
+                                                            Skill = 5
+                                                        THEN
+                                                            CASE
+                                                                WHEN dep = 5 THEN 'CC'
+                                                                ELSE 'Otros'
+                                                            END
+                                                        ELSE 'CC'
+                                                    END
+                                                END AS grupoOK,
+                                                SUM(IF(direction = 1, calls, 0)) AS inOfrecidas,
+                                                SUM(IF(direction = 1 AND grupo != 'abandon',
+                                                    calls,
+                                                    0)) AS inContestadas,
+                                                SUM(IF(direction = 1 AND grupo = 'abandon',
+                                                    calls,
+                                                    0)) AS inAbandonadas,
+                                                SUM(IF(direction = 1 AND grupo != 'abandon',
+                                                    IF(isVenta,sla20,sla30),
+                                                    0)) AS inSLA,
+                                                SUM(IF(direction = 1 AND grupo != 'abandon',
+                                                    TT,
+                                                    0)) AS inTT,
+                                                SUM(IF(direction = 1,
+                                                    waitT,
+                                                    0)) AS inWait,
+                                                SUM(IF(direction = 1 AND grupo != 'abandon',
+                                                    xfered,
+                                                    0)) AS inXfered,
+                                                SUM(IF(direction = 2 AND grupo != 'abandon',
+                                                    outEfectivas,
+                                                    0)) AS outEfectivas,
+                                                SUM(IF(direction = 2 AND grupo != 'abandon',
+                                                    outEfectivasTT,
+                                                    0)) AS outEfectivasTT,
+                                                SUM(IF(direction = 2,
+                                                    outIntentos,
+                                                    0)) AS outIntentos,
+                                                SUM(IF(direction = 2,
+                                                    outIntentosTT,
+                                                    0)) AS outIntentosTT
+                                            FROM
+                                                calls_summary a
+                                                    LEFT JOIN
+                                                PCRCs pr ON a.Skill = pr.id
+                                            WHERE
+                                                Fecha BETWEEN @inicio AND @fin
+                                                    AND a.Skill IN ".$params['skill']."
+                                            GROUP BY Fecha, Skill, grupoOK");
         // =================================================
         // END Query Calls
         // =================================================
@@ -258,51 +289,15 @@ class Tablaf extends REST_Controller {
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS kpisTel");
             $this->db->query("CREATE TEMPORARY TABLE kpisTel
                     SELECT 
-                        a.Fecha,
-                        a.Skill,
-                        a.grupo,
-                        COUNT(IF(direction = 1, ac_id, NULL)) AS inOfrecidas,
-                        COUNT(IF(direction = 1 AND Desconexion != 'Abandono',
-                            ac_id,
-                            NULL)) AS inContestadas,
-                        COUNT(IF(direction = 1 AND Desconexion = 'Abandono',
-                            ac_id,
-                            NULL)) AS inAbandonadas,
-                        COUNT(IF(direction = 1 AND Desconexion != 'Abandono'
-                                AND TIME_TO_SEC(Espera) <= 20,
-                            ac_id,
-                            NULL)) AS inSLA,
-                        SUM(IF(direction = 1 AND Desconexion != 'Abandono',
-                            TIME_TO_SEC(Duracion_Real),
-                            0)) AS inTT,
-                        SUM(IF(direction = 1 AND Desconexion != 'Abandono',
-                            TIME_TO_SEC(Espera),
-                            0)) AS inWait,
-                        COUNT(IF(direction = 1 AND Desconexion != 'Abandono'
-                                AND Desconexion = 'Transferida'
-                                AND TIME_TO_SEC(Duracion_Real) < 120,
-                            ac_id,
-                            NULL)) AS inXfered,
-                        COUNT(IF(direction = 2 AND Desconexion != 'Abandono',
-                            ac_id,
-                            NULL)) AS outEfectivas,
-                        SUM(IF(direction = 2 AND Desconexion != 'Abandono',
-                            TIME_TO_SEC(Duracion_Real),
-                            0)) AS outEfectivasTT,
-                        COUNT(IF(direction = 2 AND Desconexion = 'Abandono',
-                            ac_id,
-                            NULL)) AS outIntentos,
-                        SUM(IF(direction = 2 AND Desconexion = 'Abandono',
-                            TIME_TO_SEC(Espera),
-                            0)) AS outIntentosTT,
+                        a.*,
                         Sesion, PNP, PP, Utilizacion,
                         Ftes, HC_dia
                     FROM
                         calls a
                             LEFT JOIN
                         sesionesOK d ON a.Fecha = d.FechaOK
-                            AND a.skill = d.skill AND a.grupo=d.grupo
-                    GROUP BY a.Fecha , a.Skill, grupo;");
+                            AND a.skill = d.skill AND a.grupoOK=d.grupo
+                    GROUP BY a.Fecha , a.Skill, grupoOK;");
         // =================================================
         // END Query KPIs Telefónicos
         // =================================================
@@ -313,7 +308,7 @@ class Tablaf extends REST_Controller {
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS result");
             $this->db->query("CREATE TEMPORARY TABLE result
                                 SELECT 
-                                    b.Fecha, b.Skill, b.grupo, IF(b.Skill=0, 'Online', NOMBREDEP(b.Skill)) as Dep,
+                                    b.Fecha, b.Skill, b.grupoOK as grupo, IF(b.Skill=0, 'Online', NOMBREDEP(b.Skill)) as Dep,
                                     COALESCE(monto,0) as monto, 
                                     COALESCE(monto_hotel,0) as monto_hotel, 
                                     COALESCE(monto_tour,0) as monto_tour, 
@@ -351,7 +346,7 @@ class Tablaf extends REST_Controller {
                                 FROM
                                     kpisVenta a
                                         RIGHT JOIN
-                                    kpisTel b ON a.Fecha = b.Fecha AND a.Skill = b.Skill AND a.grupo=b.grupo");
+                                    kpisTel b ON a.Fecha = b.Fecha AND a.Skill = b.Skill AND a.grupo=b.grupoOK");
         // =================================================
         // END Query Resultados
         // =================================================
