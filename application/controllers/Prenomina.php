@@ -59,8 +59,8 @@ class Prenomina extends REST_Controller {
                                 hc_udn, hc_area, hc_dep, hc_puesto,  
                                 js, je, x1s, x1e, x2s, x2e, phx")
                 ->from("dep_asesores a")
-                ->join("asesores_programacion b", "a.asesor = b.asesor AND a.Fecha = b.Fecha")
-                ->join("Asesores c", "a.asesor = c.id")
+                ->join("asesores_programacion b", "a.asesor = b.asesor AND a.Fecha = b.Fecha", 'left')
+                ->join("Asesores c", "a.asesor = c.id", 'left')
                 ->where("a.Fecha BETWEEN ", "@inicio AND @fin", FALSE)
                 ->where("Egreso >= @fin","", FALSE)
                 ->where("num_colaborador NOT LIKE '49500%'","", FALSE)

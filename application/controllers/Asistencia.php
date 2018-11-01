@@ -1526,7 +1526,7 @@ public function pyaV2_get(){
 
             $params = $this->put();
 
-            $this->db->select("y.id as asesor, x.Fecha, b.id, js, je, x1s, x1e, x2s, x2e, cs, ce, NOMBREASESOR(a.asesor, 2) AS Nombre, IF(d.id IS NOT NULL, CASE WHEN c.a = 1 THEN d.Ausentismo WHEN c.b THEN 'Beneficio' WHEN c.d THEN 'Descanso' END,NULL) as aus", FALSE)
+            $this->db->select("y.id as asesor, x.Fecha, b.id, js, je, x1s, x1e, x2s, x2e, cs, ce, COALESCE(b.pdv,a.oficina) as pdv, a.dep, NOMBREASESOR(y.id, 2) AS Nombre, IF(d.id IS NOT NULL, CASE WHEN c.a = 1 THEN d.Ausentismo WHEN c.b THEN 'Beneficio' WHEN c.d THEN 'Descanso' END,NULL) as aus", FALSE)
             ->from("Fechas x")
             ->join("Asesores y", '1=1')
             ->join("dep_asesores a", 'a.Fecha=x.Fecha AND y.id=a.asesor', 'left')

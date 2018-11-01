@@ -1342,7 +1342,7 @@ class Cxc extends REST_Controller {
 
       $dep = $this->uri->segment(3);
 
-      $this->db->select('a.id, a.id as cxcIdLink, fecha_cxc as Fecha, a.Localizador, SUM(montoFiscal) as totalCxc, 
+      $this->db->select('a.id, a.id as cxcIdLink, COALESCE(date_rrhh,a.last_update) as Fecha, a.Localizador, SUM(montoFiscal) as totalCxc, 
                           a.asesor as asesorID, NOMBREASESOR(a.asesor,1) as asesor, NOMBREDEP(dep) as Departamento,
                           status, tipo, firmado, comments, quincenas as NQ, NOMBREASESOR(created_by,1) created_by, 
                         NOMBREASESOR(updated_by,1) updated_by')
@@ -1350,6 +1350,7 @@ class Cxc extends REST_Controller {
         ->join('cxc_transactions b', 'a.id=b.cxcIdLink', 'left')
         ->join('dep_asesores c', 'a.asesor=c.asesor AND c.Fecha=CURDATE()', 'left')
         ->where(array('a.status' => 1))
+        ->where('vacante IS NOT ', 'NULL', FALSE)
         ->group_by('a.id')
         ->having('totalCxc >', 0)
         ->order_by('asesor');
@@ -1471,6 +1472,16 @@ class Cxc extends REST_Controller {
         ->set('updated_by', $_GET['usid'])
         ->where($data['where']);
 
+      foreach($data['set'] as $field => $info){
+        if($field == 'status' && $info == 1){
+          $this->db->set('date_rrhh', 'NOW()', FALSE );
+        }
+
+        if($field == 'status' && $info == 0){
+          $this->db->set('date_rrhh', 'NULL', FALSE );
+        }
+      }
+
       if($this->db->update('asesores_cxc')){
 
             okResponse( 'CxC Actualizado', 'data', true, $this );
@@ -1514,6 +1525,40 @@ class Cxc extends REST_Controller {
       }else{
             $this->db->where( 'cxcId', $data[0]['cxcId'] )->delete('cxc_payTable');
             errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $summary['error'][0]);
+      }
+
+    });
+
+    $this->response($result);
+  }
+
+  public function cxcBajaAsesor_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $query = "SELECT 
+                    a.localizador,
+                    NOMBREASESOR(a.asesor, 2) AS Asesor,
+                    NOMBREDEP(dep) AS Dep,
+                    SUM(montoFiscal) AS mf
+                FROM
+                    asesores_cxc a
+                        LEFT JOIN
+                    cxc_transactions t ON a.id = t.cxcIdLink
+                        LEFT JOIN
+                    dep_asesores dp ON a.asesor = dp.asesor
+                        AND dp.Fecha = CURDATE()
+                WHERE
+                    status IN (0 , 1) AND vacante IS NULL
+                GROUP BY a.id
+                HAVING mf > 0";
+
+      if( $q = $this->db->query($query) ){
+            
+        okResponse( 'Warnings obtenidos', 'data', $q->result_array(), $this );
+
+      }else{
+        errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
       }
 
     });

@@ -391,6 +391,68 @@ class Lists extends REST_Controller {
       
     }
 
+    public function pdvMetas_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $mes = $this->uri->segment(4);
+            $anio = $this->uri->segment(5);
+            $status = $this->uri->segment(6);
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS plazas");
+            $this->db->query("CREATE TEMPORARY TABLE plazas SELECT 
+                                    oficina, COUNT(*) AS plazas
+                                FROM
+                                    asesores_plazas pl
+                                WHERE
+                                    pl.Status = 1 AND pl.Activo = 1
+                                        AND pl.fin > LAST_DAY(CONCAT('2018-10-01'))
+                                        AND puesto NOT IN (17,11)
+                                GROUP BY oficina");
+            $this->db->query("ALTER TABLE plazas ADD PRIMARY KEY (oficina)");
+            
+            $this->db->select("a.id,
+                                a.PDV,
+                                TRIM(displayNameShort) as displayNameShortOk,
+                                a.Activo,
+                                b.Ciudad,
+                                plazas,
+                                $mes as mes,
+                                $anio as anio,
+                                meta_total,
+                                meta_hotel,
+                                meta_total_diaria,
+                                meta_hotel_diaria")
+                    ->from('PDVs a')
+                    ->join('cat_zones b', 'a.ciudad = b.id', 'left')
+                    ->join('metas_pdv m', "a.id=m.pdv AND m.mes=$mes AND m.anio=$anio", 'left')
+                    ->join('plazas pl', "a.id=pl.oficina", 'left')
+                    ->where('pais', $pais)
+                    ->order_by('Ciudad')
+                    ->order_by('displayNameShortOk');
+            
+            switch($status){
+                case 1:
+                    $this->db->where('a.Activo',1);
+                    break;
+                case 2:
+                    $this->db->where('a.Activo',0);
+                    break;
+            }
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
     public function ccAsesoresSupList_get(){
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
@@ -400,6 +462,7 @@ class Lists extends REST_Controller {
             $this->db->select("a.asesor,
                                 TRIM(NOMBREASESOR(a.asesor,2)) as displayNameShort,
                                 b.Departamento,
+                                color,
                                 NOMBREPUESTO(puesto) as puesto,
                                 FINDSUPERDAYCC('$fecha', a.asesor, 3) AS Supervisor,
                                 FINDSUPERDAYCC('$fecha', a.asesor, 2) AS SupervisorName")
@@ -409,7 +472,7 @@ class Lists extends REST_Controller {
                     ->where('sede', $pais)
                     ->where('Fecha', $fecha)
                     ->where('puesto !=', 20)
-                    ->where_not_in('dep', array(29,56))
+                    ->where_not_in('dep', array(29,56,47))
                     ->order_by('displayNameShort');
             
             if( $q = $this->db->get() ){

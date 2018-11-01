@@ -75,14 +75,24 @@ class Mailing extends REST_Controller {
         $validate = $this->db->query("SELECT DAY(CURDATE()) as day");
         $validation = $validate->row_array();
 
-        if( $validation['day'] != 10 AND $validation['day'] != 25 ){
-            okResponse('Mail se envia días 10 y 25 de cada mes', 'data', true, $this);
+        if( $validation['day'] != 5 AND $validation['day'] != 20 ){
+            okResponse('Mail se envia días 05 y 20 de cada mes', 'data', true, $this);
         }
         
         $mails = $this->getMailList('contratos');
 
-        $this->db->query("SET @inicio = date_add(CURDATE(), interval 15 DAY)");
-        $this->db->query("SET @fin = date_add(@inicio, interval 15 DAY)");
+        $this->db->query("SELECT 
+                            IF(DAY(CURDATE()) <= 5,
+                                DATE_ADD(LAST_DAY(DATE_ADD(LAST_DAY(CURDATE()),
+                                                INTERVAL - 1 MONTH)),
+                                    INTERVAL 15 DAY),
+                                DATE_ADD(LAST_DAY(CURDATE()),
+                                    INTERVAL 1 DAY)) AS inicio,
+                            IF(DAY(CURDATE()) <= 5,
+                                LAST_DAY(CURDATE()),
+                                DATE_ADD(LAST_DAY(CURDATE()),
+                                    INTERVAL 15 DAY)) AS fin
+                        INTO @inicio , @fin");
 
         $contQ = $this->db->query("SELECT 
                                         a.asesor,
@@ -507,7 +517,7 @@ class Mailing extends REST_Controller {
         
         $msg = mailingV2::sendMail($user,$type);
         
-        okResponse('Fuera de Horario o no primer dia del mes', 'data', $msg, $this);
+        okResponse('Mail sent to '.$user, 'data', $msg, $this);
     }
 
     public function bajaSolicitud( $asesor, $solicitante, $fecha, $reemp, $recont ){

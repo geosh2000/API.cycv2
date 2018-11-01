@@ -202,5 +202,25 @@ class Config extends REST_Controller {
         });
         
     }
+    
+    public function pdvMetaEdit_put(){
+        
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+            
+            $data = $this->put();
+
+            $insert = $this->db->set($data)->get_compiled_insert('metas_pdv');
+
+            $query = $insert." ON DUPLICATE KEY UPDATE meta_total=VALUES(meta_total), meta_hotel=VALUES(meta_hotel), meta_total_diaria=VALUES(meta_total_diaria), meta_hotel_diaria=VALUES(meta_hotel_diaria)";
+
+            if( $this->db->query($query) ){
+              okResponse( 'Movimiento Guardado', 'data', true, $this );
+            }else{
+              errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+            }
+
+        });
+        
+    }
 
 }
