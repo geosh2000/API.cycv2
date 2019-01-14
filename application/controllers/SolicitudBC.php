@@ -90,6 +90,7 @@ class SolicitudBC extends REST_Controller {
         $createSol = $this->bajaSolicitud( $data, $_GET['usid'] );
 
         if($createSol['status']){
+          // okResponse( 'previous setOut Activated', 'data', true, $this );
           $result = $this->bajaSet( $data );
         }else{
           $result = array(
@@ -260,6 +261,7 @@ class SolicitudBC extends REST_Controller {
   }
 
   function setOut( $data, $usr ){
+    // okResponse( 'setOut Activated', 'data', true, $this );
 
     $vo = $this->getVacOff( $data['id'] );
 
@@ -269,6 +271,7 @@ class SolicitudBC extends REST_Controller {
     if( (int)$data['reemplazable'] == 1 ){
       if(date('Y-m-d',strtotime($last_fecha_in))>=date('Y-m-d',strtotime($data['fechaLiberacion']))){
 
+        errResponse("No es posible fijar la ficha final de una vacante que cuenta con cambios posteriores a la fecha de liberacion -> $last_fecha_in || ".$input['fecha_out'], REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'Error');
         $result = array(
                         'status'  => false,
                         'msg'     => "No es posible fijar la ficha final de una vacante que cuenta con cambios posteriores a la fecha de liberacion -> $last_fecha_in || ".$input['fecha_out']
@@ -282,6 +285,8 @@ class SolicitudBC extends REST_Controller {
     }
 
     if(date('Y-m-d', strtotime($last_fecha_in))>=date('Y-m-d', strtotime($data['fechaBaja']))){
+      errResponse("No es posible asignar cambios con fechas anteriores al ultimo registrado", REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'Error');
+        
       $result = array(
                       'status'  => false,
                       'msg'     => "No es posible asignar cambios con fechas anteriores al ultimo registrado"
@@ -310,6 +315,7 @@ class SolicitudBC extends REST_Controller {
                       'vac_off' => $vac_off
                     );
     }else{
+      errResponse("Error al registrar baja", REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
       $result = array(
                       'status'  => false,
                       'msg'     => $this->db->error()
@@ -1662,9 +1668,9 @@ class SolicitudBC extends REST_Controller {
     private function countReturn($q, $msg, $err = false){
       if( $q->num_rows() == 0 ){
           if( $err ){
-              errResponse($msg, REST_Controller::HTTP_BAD_REQUEST, $this, 'error', false);
+              // errResponse($msg, REST_Controller::HTTP_BAD_REQUEST, $this, 'error', false);
           }else{
-              okResponse($msg, 'data', true, $this);
+              // okResponse($msg, 'data', true, $this);
           }
       }
   }

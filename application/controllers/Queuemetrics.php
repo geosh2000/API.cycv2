@@ -487,5 +487,37 @@ class Queuemetrics extends REST_Controller {
 
   }
 
+  public function lostCalls_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+      $fecha = $this->uri->segment(3);
+      $pais = $this->uri->segment(4);
+
+      $query = "SELECT 
+                    CAST(CONCAT(Fecha, ' ', Hora) as DATETIME) as Hora, Llamante, a.Cola, Espera
+                FROM
+                    t_Answered_Calls a
+                        LEFT JOIN
+                    Cola_Skill b ON a.qNumber = b.queue
+                        LEFT JOIN
+                    PCRCs p ON b.Skill = p.id
+                WHERE
+                    Fecha = '$fecha'
+                        AND Answered = 0
+                        AND direction = 1
+                        AND sede = '$pais'
+                ORDER BY Fecha DESC, Hora DESC";
+
+    if( $q = $this->db->query($query) ){
+      okResponse( 'Data obtenida', 'data', $q->result_array(), $this );
+    }else{
+      errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+    }
+
+    });
+
+  }
+
 
 }

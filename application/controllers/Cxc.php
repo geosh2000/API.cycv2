@@ -837,8 +837,9 @@ class Cxc extends REST_Controller {
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
-      $payday = $this->uri->segment(3);
-      $byId = $this->uri->segment(4);
+      $asesor = $this->uri->segment(3);
+      $payday = $this->uri->segment(4);
+      $byId = $this->uri->segment(5);
 
       $name = $byId == 1 ? 1 : 2;
 
@@ -873,22 +874,8 @@ class Cxc extends REST_Controller {
                 ->where('montoParcial',0)
                 ->where('a.status',1)
                 ->group_end();
-      
-      if( isset($byId) && $byId != 1 ){
-        $this->db->join('dep_asesores dp', 'c.asesor = dp.asesor AND dp.Fecha=CURDATE()', 'left');
-                if($byId == 29){
-                  $this->db->where('dp.dep', 29);
-                }else{
-                  $this->db->where('dp.dep !=', 29);
-                }
-      }
 
-      if( isset($byId) && $byId == 1 ){
-        $this->db->select('a.montoFiscal as montoTotalCxc')
-                ->select('consecutivo as numeroParcialidad')
-                ->select('parcialidades as totalParcialidades')
-                ->where('a.cxcId', $payday);
-      }else{
+      if( isset($asesor) && $asesor > -1 ){
         $this->db->select('a.maxParcialidad as montoParcialidades')
                 ->select('paidMonto as  montoPagado')
                 ->select('pendienteMonto as montoPendiente')
@@ -896,8 +883,35 @@ class Cxc extends REST_Controller {
                 ->select('paidParc as parcialidadesPagadas')
                 ->select('consecutivo as numeroParcialidad')
                 ->select('parcialidades as totalParcialidades')
-                ->where('payday', $payday);
+                ->where('c.asesor', $asesor);
+      }else{
+        if( isset($byId) && $byId != 1 ){
+          $this->db->join('dep_asesores dp', 'c.asesor = dp.asesor AND dp.Fecha=CURDATE()', 'left');
+                  if($byId == 29){
+                    $this->db->where('dp.dep', 29);
+                  }else{
+                    $this->db->where('dp.dep !=', 29);
+                  }
+        }
+
+        if( isset($byId) && $byId == 1 ){
+          $this->db->select('a.montoFiscal as montoTotalCxc')
+                  ->select('consecutivo as numeroParcialidad')
+                  ->select('parcialidades as totalParcialidades')
+                  ->where('a.cxcId', $payday);
+        }else{
+          $this->db->select('a.maxParcialidad as montoParcialidades')
+                  ->select('paidMonto as  montoPagado')
+                  ->select('pendienteMonto as montoPendiente')
+                  ->select('a.montoFiscal as montoTotalCxc')
+                  ->select('paidParc as parcialidadesPagadas')
+                  ->select('consecutivo as numeroParcialidad')
+                  ->select('parcialidades as totalParcialidades')
+                  ->where('payday', $payday);
+        }
       }
+
+
 
       $query = $this->db->get_compiled_select();
 

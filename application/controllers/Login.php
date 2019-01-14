@@ -185,7 +185,9 @@ class Login extends REST_Controller {
                               b.id AS hc_dep,
                               e.id AS hc_puesto,
                               e.clave AS hc_puesto_clave,
-                              GETIDASESOR('$usr',3) as id
+                              GETIDASESOR('$usr',3) as id,
+                              x.dep, x.puesto,
+                              NOMBREASESOR(x.asesor,2) as Nombre
                           FROM
                               dep_asesores x
                                   LEFT JOIN

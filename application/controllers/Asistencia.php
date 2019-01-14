@@ -1564,6 +1564,8 @@ public function pyaV2_get(){
 
             foreach($data as $item => $info){
 
+                unset($info['dep']);
+
                 if(isset($regsByAsesor[$info['asesor']])){
                     $regsByAsesor[$info['asesor']]++;
                 }else{
@@ -1610,7 +1612,7 @@ public function pyaV2_get(){
 
                 $nUpd = " ON DUPLICATE KEY UPDATE ";
                 foreach($info as $key => $field){
-                    if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' ){
+                    if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' && $key != 'dep' ){
                         $value = $field == null ? "NULL" : "'$field'";
                         $nUpd .= "`$key` = VALUES($key), ";
                     }

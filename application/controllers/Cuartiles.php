@@ -116,8 +116,10 @@ class Cuartiles extends REST_Controller {
 
         foreach($result as $index => $info){
         foreach($fields as $key => $type){
-            if($result[$index]['TotalSesion'] >= $avgSession){
-            $data[$key][$index] = $info[$key];
+            if(isset($result[$index]['TotalSesion'])){
+                if($result[$index]['TotalSesion'] >= $avgSession){
+                    $data[$key][$index] = $info[$key];
+                }    
             }
         }
         }
@@ -163,6 +165,73 @@ class Cuartiles extends REST_Controller {
             }
 
             $result[$key2][$key.'Q']=$x;
+
+            $i++;
+        }
+        }
+
+        return $result;
+
+    }
+
+    public function quartilizeV2($array, $fields, $sesField){
+
+
+        $result = $array;
+
+        $avgSession = array_sum(array_column($result, $sesField))/count($result)*0.7;
+
+        foreach($result as $index => $info){
+        foreach($fields as $key => $type){
+            if(isset($result[$index][$sesField])){
+                if($result[$index][$sesField] >= $avgSession){
+                    $data[$key][$index] = $info[$key];
+                }    
+            }
+        }
+        }
+
+        foreach($data as $key => $info2){
+
+        if($fields[$key] == 'Desc'){
+            asort($info2);
+        }else{
+            arsort($info2);
+        }
+
+        $keys = array_keys($info2);
+
+        $length=count($info2);
+        $qs = intval($length/4);
+        $qsx = ($length % 4)*4;
+
+        $x=1;
+        for($i=1; $i<=4; $i++){
+
+            if($i <= $qsx){
+            $q[$i] = $qs+1;
+            }else{
+            $q[$i]=$qs;
+            }
+
+        }
+
+        $i=1;
+        $x=1;
+        foreach($info2 as $key2 => $info3){
+
+            if($x <= $qsx){
+            $max = $qs+1;
+            }else{
+            $max = $qs;
+            }
+
+            if($i > $max){
+            $x++;
+            $i=1;
+            }
+
+            $result[$key2]['Q_'.$key]=$x;
 
             $i++;
         }
@@ -1257,6 +1326,291 @@ class Cuartiles extends REST_Controller {
 
           if($q = $this->db->query($query)){
               okResponse( 'Data Obtenida', 'data', $q->result_array(), $this );
+          }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+          }
+
+          return true;
+
+        });
+
+        jsonPrint( $result );
+        
+    }
+
+    public function param_get(){
+        if( $q = $this->db->query("SELECT * FROM param_cuartiles") ){
+
+            $params = $q->result_array();
+            $result = array();
+
+            foreach( $params as $index => $info ){
+                $result[$info['skill']] = $info;
+                $result[$info['skill']]['qlz'] = json_decode($info['qrt'],true);
+            }
+
+            okResponse( 'Data Obtenida', 'data', $result, $this );
+        }else{
+            errResponse('Error al recibir parametros', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+
+
+    }
+
+    public function bo_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $params = $this->put();
+
+            $this->db->query("SET @inicio='".$params['inicio']."'");
+            $this->db->query("SET @fin='".$params['fin']."'");
+
+            // -- Asesores --
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_asesores");
+            $this->db->query("CREATE TEMPORARY TABLE mc_asesores SELECT  DISTINCT
+                asesor, a.puesto, Ingreso, Egreso
+            FROM
+                dep_asesores a
+                    LEFT JOIN
+                Asesores b ON a.asesor = b.id
+            WHERE
+                Fecha BETWEEN @inicio AND @fin
+                    AND vacante IS NOT NULL
+                    AND dep = ".$params['dep']."
+                    AND a.puesto != 11");
+
+
+            // -- Casos --
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_casos");
+            $this->db->query("CREATE TEMPORARY TABLE mc_casos SELECT 
+                asesor,
+                COUNT(*) AS casos
+            FROM
+                form_dataBase
+            WHERE
+                master = ".$params['formMaster']."
+                    AND dtCreated BETWEEN @inicio AND ADDDATE(@fin,1)
+            GROUP BY asesor");
+                    
+
+            // -- Sesiones --
+                    
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_ses");
+            $this->db->query("CREATE TEMPORARY TABLE mc_ses SELECT 
+                asesor, SUM(TIME_TO_SEC(duracion))/60/60 AS Sesion, ".$params['opt1']."
+            FROM
+                asesores_logs
+            WHERE
+                login BETWEEN @inicio AND ADDDATE(@fin, 1)
+                    AND skill IN (".$params['querySkills'].")
+            GROUP BY asesor");
+
+            // -- PyA --
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pyaRAW");
+            $this->db->query("CREATE TEMPORARY TABLE pyaRAW SELECT 
+                a.Fecha,
+                ma.asesor,
+                js,
+                je,
+                CHECKLOG(a.Fecha, ma.asesor, 'in') AS login,
+                CHECKLOG(a.Fecha, ma.asesor, 'out') AS logout,
+                ausentismo,
+                tipo
+            FROM
+                mc_asesores ma
+                    LEFT JOIN
+                asesores_programacion a ON ma.asesor = a.asesor
+                    LEFT JOIN
+                asesores_ausentismos aus ON a.Fecha = aus.Fecha
+                    AND ma.asesor = aus.asesor
+                    LEFT JOIN
+                asesores_pya_exceptions p ON ma.asesor = p.asesor
+                    AND p.Fecha = a.Fecha
+            WHERE
+                a.Fecha BETWEEN @inicio AND @fin");
+                    
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pya");
+            $this->db->query("CREATE TEMPORARY TABLE pya SELECT 
+                Fecha, asesor,
+                IF(ausentismo NOT IN (22 , 15)
+                        OR ausentismo IS NULL,
+                    IF(js != je AND login IS NULL,
+                        IF(ausentismo IN (8 , 15, 22)
+                                OR ausentismo IS NULL,
+                            1,
+                            0),
+                        IF(ausentismo != 15 OR ausentismo IS NULL,
+                            IF(logout < je,
+                                IF(TIME_TO_SEC(TIMEDIFF(logout, js)) / TIME_TO_SEC(TIMEDIFF(je, js)) < 0.6,
+                                    IF(ausentismo IN (8 , 15, 22)
+                                            OR ausentismo IS NULL,
+                                        1,
+                                        0),
+                                    0),
+                                0),
+                            1)),
+                    1) AS FA,
+                IF(js != je AND login IS NOT NULL
+                        AND (ausentismo IS NULL OR ausentismo IN (10,19)),
+                    IF(login >= ADDTIME(js, '00:01:00'),
+                        IF(tipo != 3 OR tipo IS NULL, 1, 0),
+                        0),
+                    0) AS RT
+            FROM
+                pyaRAW");
+            $this->db->query("ALTER TABLE pya ADD PRIMARY KEY (Fecha, asesor)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_pya;");
+            $this->db->query("CREATE TEMPORARY TABLE mc_pya SELECT  
+                asesor, SUM(RT) AS RT, GROUP_CONCAT(IF(RT=1,Fecha,NULL)) as RtDates, SUM(FA) AS FA, GROUP_CONCAT(IF(FA=1,Fecha,NULL)) as FADates
+            FROM
+                pya
+            GROUP BY asesor");
+
+            // -- PAUSAS --
+                    
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pausasRAW");
+            $this->db->query("CREATE TEMPORARY TABLE pausasRAW SELECT 
+                f.Fecha,
+                a.asesor,
+                CASE 
+                    WHEN TIME_TO_SEC(CAST(TIMEDIFF(je,js) as TIME))/60/60 BETWEEN 6.1 AND 8.99 THEN 8
+                    WHEN TIME_TO_SEC(CAST(TIMEDIFF(je,js) as TIME))/60/60 BETWEEN 4.1 AND 6 THEN 6
+                    WHEN TIME_TO_SEC(CAST(TIMEDIFF(je,js) as TIME))/60/60 <= 4 THEN 4
+                    WHEN TIME_TO_SEC(CAST(TIMEDIFF(je,js) as TIME))/60/60 >= 9 THEN 10
+                END as esquema_vacante,
+                IF(correctPauseType IS NOT NULL,
+                    correctPauseType,
+                    tipo) AS tipoOK,
+                IF(COALESCE(c.status, 0) = 1, '00:00:00' ,COALESCE(TIMEDIFF(IF(Inicio<js,IF(Fin>js,Fin,NULL),IF(Inicio<je,IF(Fin>je,je,Fin),NULL)),IF(Inicio<js,IF(Fin>js,js,NULL),IF(Inicio<je,Inicio, Null))),'00:00:00')) as Duracion,
+                COALESCE(c.status, 0) AS st
+            FROM
+                Fechas f JOIN 
+                mc_asesores a
+                    LEFT JOIN
+                asesores_pausas b ON a.asesor = b.asesor
+                    AND f.Fecha = CAST(b.inicio AS DATE)
+                    LEFT JOIN
+                asesores_pausas_status c ON b.id = c.id
+                    LEFT JOIN
+                asesores_programacion d ON a.asesor = d.asesor
+                    AND f.Fecha = d.Fecha
+            WHERE
+                f.Fecha BETWEEN @inicio AND @fin
+                    AND b.id IS NOT NULL
+                    AND (tipo IN (3 , 11)
+                    AND (correctPauseType IS NULL
+                    OR correctPauseType IN (3 , 11))
+                    OR correctPauseType IN (3 , 11))");
+                    
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pausas");
+            $this->db->query("CREATE TEMPORARY TABLE pausas
+            SELECT 
+                Fecha,
+                asesor,
+                SUM(IF(tipoOK = 3, TIME_TO_SEC(Duracion), 0)) AS Comida,
+                SUM(IF(tipoOK = 11,
+                    TIME_TO_SEC(Duracion),
+                    0)) AS PNP,
+                IF( SUM(IF(tipoOK = 3, TIME_TO_SEC(Duracion), 0)) > 
+                            1800+59 OR
+                    SUM(IF(tipoOK = 11,
+                    TIME_TO_SEC(Duracion),
+                    0)) > 
+                            CASE
+                                WHEN esquema_vacante = 4 THEN 780+59
+                                WHEN esquema_vacante = 6 THEN 1800+59
+                                WHEN esquema_vacante = 8 THEN 1020+59
+                                WHEN esquema_vacante = 10 THEN 1260+59
+                            END , 1 , 0) as Exceed
+            FROM
+                pausasRAW
+            GROUP BY Fecha , asesor");
+
+            $this->db->query("ALTER TABLE pausas ADD PRIMARY KEY (Fecha, asesor)");   
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_pausas");
+            $this->db->query("CREATE TEMPORARY TABLE mc_pausas SELECT 
+                asesor,
+                SUM(Exceed) AS diasExcedidos,
+                (SUM(Comida) + SUM(PNP)) / 60 / 60 AS Pausas
+            FROM
+                pausas
+            GROUP BY asesor");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS mc_venta");
+            $this->db->query("CREATE TEMPORARY TABLE mc_venta SELECT  
+                    asesor,
+                    SUM(MontoSV) AS Monto,
+                    SUM(HotelAllInSV) + SUM(HotelAllNotInSV) AS Hotel,
+                    SUM(TransferInSV) + SUM(TransferNotInSV) AS Transfer,
+                    SUM(TourInSV) + SUM(TourNotInSV) AS Tour,
+                    SUM(callsIn) AS callsIn,
+                    SUM(callsOut) AS callsOut,
+                    SUM(TTIn) / SUM(callsIn) AS ahtIn,
+                    SUM(TTOut) / SUM(callsOut) AS ahtOut,
+                    SUM(IntentosOut) AS IntentosOut,
+                    SUM(LocsIn) AS LocsIn,
+                    SUM(LocsNotIn) AS LocsOut,
+                    SUM(RN) AS RN
+                FROM
+                    graf_dailySale
+                WHERE
+                    Fecha BETWEEN @inicio AND @fin GROUP BY asesor");
+            $this->db->query("ALTER TABLE mc_venta ADD PRIMARY KEY (asesor)");
+
+            $query = "SELECT 
+                a.asesor,
+                NOMBREASESOR(a.asesor, 2) AS Nombre,
+                NOMBREPUESTO(puesto) AS Puesto,
+                FINDSUPERDAYCC(@fin, a.asesor, 2) AS Supervisor,
+                Monto,
+                Hotel,
+                Transfer,
+                Tour,
+                callsIn,
+                COALESCE(ahtIn,0) as ahtIn,
+                callsOut,
+                COALESCE(ahtOut,0) as ahtOut,
+                intentosOut,
+                LocsIn,
+                LocsOut,
+                RN,
+                LocsIn / callsIn AS FC,
+                Sesion,
+                Pausas as Pausas,
+                1-(Pausas/Sesion) as Utilizacion,
+                casos,
+                casos / Sesion AS Eficiencia,
+                diasExcedidos AS PausasExcedidas,
+                RT,
+                FA,
+                RtDates,
+                FADates
+            FROM
+                mc_asesores a
+                    LEFT JOIN
+                mc_casos cs ON a.asesor = cs.asesor
+                    LEFT JOIN
+                mc_ses s ON a.asesor = s.asesor AND puesto = s.sk
+                    LEFT JOIN
+                mc_venta v ON a.asesor = v.asesor
+                    LEFT JOIN
+                mc_pausas p ON a.asesor = p.asesor
+                    LEFT JOIN
+                mc_pya pya ON a.asesor = pya.asesor
+            ORDER BY Nombre";
+            
+
+          if($q = $this->db->query($query)){
+
+            // okResponse( 'Data Obtenida', 'data', $q->result_array(), $this );
+
+            $result = $this->quartilizeV2( $q->result_array(), $params['qlz'], 'Sesion');
+              okResponse( 'Data Obtenida', 'data', $result, $this );
           }else{
             errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
           }

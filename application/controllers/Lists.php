@@ -309,10 +309,34 @@ class Lists extends REST_Controller {
                     ->join('PCRCs b', 'a.dep = b.id', 'left')
                     ->where('Fecha', $fecha)
                     ->where('sede', $pais)
-                    ->where('puesto', 11)
+                    ->where_in('puesto', array(11,48))
                     ->where('vacante IS NOT ', 'NULL', FALSE)
                     ->where_in('dep', array(29,56))
                     ->order_by('Nombre');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function pdvZoneList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            
+            $this->db->select("*")
+                    ->from('pdv_zonesCustom')
+                    ->where('pais', $pais)
+                    ->where('active', 1)
+                    ->order_by('nombreZona');
             
             if( $q = $this->db->get() ){
                 
@@ -338,9 +362,9 @@ class Lists extends REST_Controller {
                     ->join('PCRCs b', 'a.dep = b.id', 'left')
                     ->where('Fecha', $fecha)
                     ->where('sede', $pais)
-                    ->where_in('puesto', array(11,17,18,19,20,21,37,38,39,40,41,42,45))
+                    ->where_in('puesto', array(11,17,18,19,20,21,37,38,39,40,41,42,45,48))
                     ->where('vacante IS NOT ', 'NULL', FALSE)
-                    ->where_not_in('dep', array(29,56))
+                    ->where('(dep NOT IN (29,56) OR (dep = 29 AND puesto IN (17,48)))', null, FALSE)
                     ->order_by('Nombre');
             
             if( $q = $this->db->get() ){
@@ -368,7 +392,8 @@ class Lists extends REST_Controller {
                                 b.Ciudad,
                                 cityForListing,
                                 FINDSUPERDAYPDV('$fecha', a.id, 3) AS Supervisor,
-                                FINDSUPERDAYPDV('$fecha', a.id, 2) AS SupervisorName")
+                                FINDSUPERDAYPDV('$fecha', a.id, 2) AS SupervisorName,
+                                customZone")
                     ->from('PDVs a')
                     ->join('cat_zones b', 'a.ciudad = b.id', 'left')
                     ->group_start()
@@ -406,8 +431,8 @@ class Lists extends REST_Controller {
                                     asesores_plazas pl
                                 WHERE
                                     pl.Status = 1 AND pl.Activo = 1
-                                        AND pl.fin > LAST_DAY(CONCAT('2018-10-01'))
-                                        AND puesto NOT IN (17,11)
+                                        AND pl.fin > LAST_DAY(CONCAT('$anio-$mes-01'))
+                                        AND puesto NOT IN (17,11) 
                                 GROUP BY oficina");
             $this->db->query("ALTER TABLE plazas ADD PRIMARY KEY (oficina)");
             
@@ -472,7 +497,7 @@ class Lists extends REST_Controller {
                     ->where('sede', $pais)
                     ->where('Fecha', $fecha)
                     ->where('puesto !=', 20)
-                    ->where_not_in('dep', array(29,56,47))
+                    ->where('(dep NOT IN (29,56,47) OR (dep=29 AND puesto IN (11,48)))', null, FALSE)
                     ->order_by('displayNameShort');
             
             if( $q = $this->db->get() ){
@@ -487,5 +512,231 @@ class Lists extends REST_Controller {
         });
       
     }
+
+    public function ofertas_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+
+            foreach($data as $index => $info){
+                $data[$index]['creator'] = $_GET['usid'];
+
+                if( !isset($data[$index]['Activo']) ){
+                    $data[$index]['Activo'] = 1;
+                }
+
+                if( !isset($data[$index]['Incentivo']) ){
+                    $data[$index]['Incentivo'] = 0;
+                }
+            }
+
+            if( $this->db->insert_batch('pdv_ofertas', $data) ){
+                
+                okResponse( 'Info Obtenida', 'data', TRUE, $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function ofertas_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $fecha = $this->uri->segment(3);
+            
+            $this->db->select("*, COALESCE(incentivo_pdv,0)+COALESCE(incentivo_cc,0) as inc")
+                    ->from('pdv_ofertas')
+                    ->order_by('inc DESC')
+                    ->order_by('Destination')
+                    ->order_by('Name');
+
+            if( isset($fecha) ){
+                $this->db->where("'$fecha' BETWEEN bookWinStart AND bookWinEnd", NULL, FALSE);
+            }else{
+                $this->db->where("CURDATE() BETWEEN bookWinStart AND bookWinEnd", NULL, FALSE);
+            }
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function updateOfertas_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+            
+            $this->db->set($data['field'], $data['val'])
+                    ->set('last_editor', $_GET['usid'])
+                    ->where('id', $data['id']);
+
+            if( $this->db->update('pdv_ofertas') ){
+                
+                okResponse( 'Info Obtenida', 'data', true, $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function updateMasBuscados_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+            
+           
+
+            if( $data['delete'] ){
+                if( $this->db->where('id', $data['id'])->delete('t_masBuscados') ){
+                    
+                    okResponse( 'Info Borrada', 'data', true, $this);
+                    
+                }else{
+                    errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+                }
+            }else{
+                $this->db->set($data['field'], $data['val'])
+                    ->where('id', $data['id']);
+                if( $this->db->update('t_masBuscados') ){
+                    
+                    okResponse( 'Info Obtenida', 'data', true, $this);
+                    
+                }else{
+                    errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+                }
+            }        
+
+            return true;
+        });
+      
+    }
+
+    public function addMasBuscados_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+            
+           
+
+            $this->db->set($data);
+
+            if( $this->db->insert('t_masBuscados') ){
+                
+                okResponse( 'Info Obtenida', 'data', true, $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+              
+
+            return true;
+        });
+      
+    }
+
+
+    public function pdvZoneCoordList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("a.id,
+                                nombreZona as PDV,
+                                nombreZona as displayNameShort,
+                                FindCoordDayPDV('$fecha', a.id, 3) AS Supervisor,
+                                FindCoordDayPDV('$fecha', a.id, 2) AS SupervisorName")
+                    ->from('pdv_zonesCustom a')
+                    ->where('active', 1)
+                    ->where('pais', $pais)
+                    ->order_by('nombreZona');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+
+    public function pdvCoordList_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $fecha = $this->uri->segment(4);
+            
+            $this->db->select("asesor, NOMBREASESOR(asesor, 1) AS Nombre, NOMBREASESOR(asesor, 2) AS NombreCompleto")
+                    ->from('dep_asesores a')
+                    ->join('PCRCs b', 'a.dep = b.id', 'left')
+                    ->where('Fecha', $fecha)
+                    ->where('sede', $pais)
+                    ->where_in('puesto', array(11,17,48))
+                    ->where('vacante IS NOT ', 'NULL', FALSE)
+                    ->where_in('dep', array(29,56))
+                    ->order_by('Nombre');
+            
+            if( $q = $this->db->get() ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
+    public function individualZone_put(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $data = $this->put();
+            $name = $data['name']['name'];
+            // okResponse( 'Info Obtenida', 'data', $name, $this);
+            
+            $query = "SELECT nombreZona, FINDCOORDDAYPDV(CURDATE(), id, 2) AS Coord
+                            FROM
+                                pdv_zonesCustom
+                            WHERE
+                                active = 1
+                            HAVING Coord = '$name'";
+            
+        
+            if( $q = $this->db->query($query) ){
+                
+                okResponse( 'Info Obtenida', 'data', $q->row_array(), $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
+
 
 }

@@ -9,6 +9,9 @@ class UploadImage extends REST_Controller {
   public function __construct(){
 
     parent::__construct();
+    
+    $this->output->set_header("Acess-Control-Allow-Origin:*");
+
     $this->load->helper('json_utilities');
     $this->load->helper('jwt');
     $this->load->helper('validators');

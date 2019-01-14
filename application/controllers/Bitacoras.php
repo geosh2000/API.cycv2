@@ -226,7 +226,7 @@ class Bitacoras extends REST_Controller {
                 ',\"asesorId\":',
                 asesor,
                 ',\"comments\":\"',
-                comments,
+                REPLACE(comments,'\"', '\''),
                 '\",\"asesor\":\"',
                 NOMBREASESOR(asesor, 1),
                 '\",\"last_update\":\"',

@@ -139,8 +139,8 @@ class Asesores extends REST_Controller {
                                       cat_zones b ON a.ciudad = b.id
                                   WHERE
                                       (a.Activo=1 OR (a.Activo=0 AND a.PDV LIKE '%General%'))
-                                          AND (a.PDV LIKE 'MX%' OR a.PDV LIKE '%General%')
-                                          AND PDV NOT LIKE '%YYY%'
+                                          -- AND (a.PDV LIKE 'MX%' OR a.PDV LIKE '%General%')
+                                          -- AND PDV NOT LIKE '%YYY%'
                                           AND (PDV LIKE '%$search%' OR b.Ciudad LIKE '%$search%')
                                   ORDER BY PDV")){
 

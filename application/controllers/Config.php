@@ -180,6 +180,29 @@ class Config extends REST_Controller {
         
     }
     
+    public function pdvZoneAssign_put(){
+        
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+            
+            $data = $this->put();
+
+            if($data['customZone'] == 'none'){
+              $data['customZone'] = NULL;
+            }
+
+            $this->db->set('customZone', $data['customZone'])
+                ->where('id', $data['id']);
+
+            if( $this->db->update('PDVs') ){
+              okResponse( 'Movimiento Guardado', 'data', true, $this );
+            }else{
+              errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+            }
+
+        });
+        
+    }
+    
     public function ccSupAssign_put(){
         
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
@@ -222,5 +245,28 @@ class Config extends REST_Controller {
         });
         
     }
+
+    public function pdvCoordZoneAssign_put(){
+        
+      $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+          
+          $data = $this->put();
+
+          if($data['coordinator'] == 'none'){
+            $data['coordinator'] = NULL;
+          }
+
+          $ins = $this->db->set($data)->set('creator', $_GET['usid'])->get_compiled_insert('pdv_zoneAssign');
+          $query = $ins." ON DUPLICATE KEY UPDATE coordinator=VALUES(coordinator), creator=VALUES(creator)";
+
+          if( $this->db->query($query) ){
+            okResponse( 'Movimiento Guardado', 'data', true, $this );
+          }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_NOT_IMPLEMENTED, $this, 'error', $this->db->error());
+          }
+
+      });
+      
+  }
 
 }

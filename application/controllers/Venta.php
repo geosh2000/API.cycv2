@@ -108,6 +108,7 @@ class Venta extends REST_Controller {
                 $ml = $this->uri->segment(10);
                 $h = $this->uri->segment(11);
                 $mt = $this->uri->segment(12);
+                $pais = $this->uri->segment(13);
             // ======================================================================
             // END Get Inputs
             // ======================================================================
@@ -138,9 +139,13 @@ class Venta extends REST_Controller {
                 $isHour = $h == 1 ? true : false;
 
                 if( $mp ){
-                    $pais = 'MX';
+                    if( !isset($pais) ){
+                        $pais = 'MX';
+                    }
                 }else{
-                    $pais = null;
+                    if( !isset($pais) ){
+                        $pais = null;
+                    }
                 }
 
             // ======================================================================
@@ -209,9 +214,15 @@ class Venta extends REST_Controller {
             END gpoInterno";
             }
 
+            if( $pais == 'CO' ){
+                $curr = 'COP';
+            }else{
+                $curr = 'MXN';
+            }
+
             
 
-            $this->db->select("Fecha, $pdvType, SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, NewLoc", FALSE)
+            $this->db->select("Fecha, $pdvType, SUM(Venta$curr+OtrosIngresos$curr+Egresos$curr) as Monto, NewLoc", FALSE)
                         ->select('servicio as producto', FALSE)
                         ->from("base a")
                         ->join("config_tipoRsva tp", "IF(a.dep IS NULL,
@@ -260,6 +271,7 @@ class Venta extends REST_Controller {
 
             if($q = $this->db->get()){
                 $result = $q->result_array();
+                // okResponse('ok', 'query', $result, $this);
                 
                 foreach($result as $index => $info){
                     if($info['Monto'] == NULL){
@@ -277,29 +289,30 @@ class Venta extends REST_Controller {
                     switch($type){
                         case 'h':
                             $dataRes[$info['Fecha']][$info['h']][$info['gpoInterno']]=floatVal($monto);
-                            $dataLocs[$info['Fecha']][$info['h']][$info['gpoInterno']]=intVal($info['Locs']);
+                            $dataLocs[$info['Fecha']][$info['h']][$info['gpoInterno']]=intVal($info['Localizadores']);
                             break;
                         case 'd':
                             $dataRes[$info['Fecha']][$info['gpoInterno']]=floatVal($monto);
-                            $dataLocs[$info['Fecha']][$info['gpoInterno']]=intVal($info['Locs']);
+                            $dataLocs[$info['Fecha']][$info['gpoInterno']]=intVal($info['Localizadores']);
                             break;
                         case 'ph':
                             $dataRes[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
-                            $dataLocs[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
+                            $dataLocs[$info['Fecha']][$info['h']][$info['producto']][$info['gpoInterno']]=intVal($info['Localizadores']);
                             break;
                         case 'pd':
                             $dataRes[$info['Fecha']][$info['producto']][$info['gpoInterno']]=floatVal($monto);
-                            $dataLocs[$info['Fecha']][$info['producto']][$info['gpoInterno']]=intVal($info['Locs']);
+                            $dataLocs[$info['Fecha']][$info['producto']][$info['gpoInterno']]=intVal($info['Localizadores']);
                             break;
                     }
 
                 }
 
-                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu, '$curr' as currency FROM d_Locs WHERE Fecha=CURDATE()");
                 $luR = $luQ->row_array();
                 $lu = $luR['lu'];
+                $currency = $luR['currency'];
 
-                okResponse( 'Data obtenida', 'data', array('venta' => $dataRes, 'locs' => $dataLocs), $this, 'lu', $lu );
+                okResponse( 'Data obtenida', 'data', array('venta' => $dataRes, 'locs' => $dataLocs, 'currency' => $currency), $this, 'lu', $lu );
             }else{
                 errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
             }
@@ -428,9 +441,10 @@ class Venta extends REST_Controller {
                     $this->db->select("Fecha, b.branchId, TRIM(cityForListing) as Ciudad, PDV, TRIM(displayNameShort) as PdvName, FINDSUPERDAYPDV(a.Fecha, b.id, 1) as Supervisor", FALSE)
                             ->from("Fechas a")
                             ->join('PDVs b', '1=1')
+                            ->join('cat_zones z', 'b.branchZoneId = z.id')
                             ->where('Fecha BETWEEN ', "'$start' AND '$end'", FALSE)
                             ->where('b.Activo', 1)
-                            ->where('PDV LIKE ', "'MX%'", FALSE)
+                            ->where('z.pais', "MX")
                             ->where('displayNameShort !=', "home");
                 }
 
@@ -1085,6 +1099,100 @@ class Venta extends REST_Controller {
 
     }
 
+    public function weekSale_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            $inicio = $this->uri->segment(4);
+            $fin = $this->uri->segment(5);
+            $porPdv = $this->uri->segment(6);
+
+            if( !isset($fin) ){
+                $fin = $inicio;
+                $this->db->select('a.Fecha as FechaOk');
+            }else{
+                if($inicio != $fin){
+                    $this->db->select("CONCAT('$inicio',' - ','$fin') as FechaOk", FALSE);
+                }else{
+                    $this->db->select('a.Fecha as FechaOk');
+                }
+            }
+
+            $this->db->from("t_hoteles_test a")
+                    ->join("chanGroups b","a.chanId = b.id","left",FALSE)
+                    ->join("itemTypes it","a.itemType = it.type
+                                            AND a.categoryId = it.category","left",FALSE)
+                    ->join("t_masterlocators ml","a.Localizador = ml.masterlocatorid","left",FALSE)
+                    ->join("dep_asesores dp","ml.asesor = dp.asesor
+                                                AND a.Fecha = dp.Fecha","left",FALSE)
+                    ->join("config_tipoRsva tr","IF(dp.dep IS NULL,
+                                                IF(ml.asesor = - 1, - 1, 0),
+                                                IF(dp.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
+                                                    0,
+                                                    dp.dep)) = tr.dep
+                                                AND IF(ml.tipo IS NULL OR ml.tipo = '',
+                                                0,
+                                                ml.tipo) = tr.tipo","left",FALSE)
+                    ->where(array('b.pais'=>$pais, 'marca' => 'Marcas Propias', 'a.Fecha >=' => $inicio, 'a.Fecha <=' => $fin))
+                    ->where(array('Servicio'=>'Hotel', 'CAST(ml.dtCreated AS DATE) = a.Fecha' => NULL));
+
+            if( $porPdv == 1 ){
+                $this->db->select("b.pais,
+                            gpoCanalKpi,
+                            gpoTipoRsva,
+                            Hotel,
+                            hotelId,
+                            placeId,
+                            Destination,
+                            PDV, nombreZona as Zona,
+                            COUNT(DISTINCT CONCAT(Localizador,'-', item)) as MLs,
+                            SUM(clientNights) as RN", FALSE)
+                        ->join('PDVs p', 'a.branchId = p.branchid', 'left')
+                        ->join('pdv_zonesCustom z', 'p.customZone = z.id', 'left')
+                        ->group_by(array('FechaOk', 'gpoCanalKpi','gpoTipoRsva','Hotel','Destination','PDV'));
+            }else{
+                $this->db->select("b.pais,
+                            gpoCanalKpi,
+                            gpoTipoRsva,
+                            Hotel,
+                            hotelId,
+                            placeId,
+                            Destination,
+                            YEAR(checkIn) AS Anio,
+                            WEEK(checkIn, 4) AS Semana,
+                            COUNT(DISTINCT CONCAT(Localizador,'-', item)) as MLs,
+                            SUM(clientNights) as RN", FALSE)
+                        ->group_by(array('FechaOk', 'gpoCanalKpi','gpoTipoRsva','Hotel','Destination','Anio','Semana'));
+            }
+
+                    $qu = $this->db->get_compiled_select();
+                    
+                    
+            if( $q = $this->db->query($qu) ){
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this, "pdvGroup", $porPdv);
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+        });
+
+    }
+
+    public function masBuscado_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            if( $q = $this->db->select('*')->select("STR_TO_DATE(CONCAT(anio,semana,' Monday'), '%Y%u %W') as fd", FALSE)->order_by('destino')->order_by('hotel')->get('t_masBuscados') ){
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this);
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+        });
+
+    }
+
     public function getSup_get(){
         $q = $this->db->query("SELECT 
                             FINDSUPERDAYPDV(CURDATE(), oficina, 2) AS sup
@@ -1095,6 +1203,234 @@ class Venta extends REST_Controller {
                         HAVING sup IS NOT NULL");
         
         okResponse('Supervisor obtenido', 'data', $q->row_array(), $this);
+    }
+
+    public function avancePdvDiario_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $inicio = $this->uri->segment(3);
+            $fin = $this->uri->segment(4);
+            
+            $this->db->query("SET @inicio='$inicio'");
+            $this->db->query("SET @fin='$fin'");
+
+            $this->db->select("a.Fecha,
+                            a.asesor,
+                            NOMBREASESOR(a.asesor, 2) AS Nombre,
+                            p.PDV,
+                            zc.nombreZona,
+                            FINDSUPERDAYPDV(a.Fecha, COALESCE(ap.pdv, dp.oficina), 2) AS Supervisor,
+                            FINDCOORDDAYPDV(a.Fecha, zc.id, 2) AS Coordinador,
+                            MontoSV AS ventaTotal,
+                            meta_total_diaria / mp.asesores AS metaTotalDia,
+                            MontoSV / (meta_total_diaria / mp.asesores) AS cumplimiento_metaTotalDia,
+                            HotelAllInSV + HotelAllNotInSV AS ventaHotel,
+                            meta_hotel_diaria / mp.asesores AS metaHotelDia,
+                            (HotelAllInSV + HotelAllNotInSV) / (meta_hotel_diaria / mp.asesores) AS cumplimiento_metaHotelDia", FALSE) 
+            ->from("graf_dailySale a")
+            ->join("dep_asesores dp", "a.asesor = dp.asesor AND a.Fecha = dp.Fecha", "left")
+            ->join("asesores_programacion ap", "a.asesor = ap.asesor AND a.Fecha = ap.Fecha", "left")
+            ->join("metas_pdv mp", "COALESCE(ap.pdv, dp.oficina) = mp.pdv
+                                    AND YEAR(a.Fecha) = mp.anio
+                                    AND MONTH(a.Fecha) = mp.mes", "left", FALSE)
+            ->join("PDVs p", "COALESCE(ap.pdv, dp.oficina) = p.id", "left")
+            ->join("pdv_zonesCustom zc", "p.customZone = zc.id", "left")
+            ->where("a.Fecha BETWEEN ", "@inicio AND @fin", FALSE)
+            ->where("a.dep", 29)
+            ->where_not_in("dp.puesto", array(11 , 17, 48))
+            ->order_by(array('Fecha','Nombre'));
+
+            if( $q = $this->db->get() ){
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this);
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+        });
+
+    }
+
+    public function avancePdvMes_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $mes = $this->uri->segment(3);
+            $anio = $this->uri->segment(4);
+
+            
+            
+            $this->db->query("SET @inicio='$anio-$mes-01'");
+            $this->db->query("SET @fin=LAST_DAY(@inicio)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS ventaPdv");
+
+            $this->db->query("CREATE TEMPORARY TABLE ventaPdv
+                                SELECT 
+                                    Fecha,
+                                    branchid,
+                                    COALESCE(asesor,0) as asesor,
+                                    SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS Monto,
+                                    SUM(IF(CAST(dtCreated AS DATE) = a.Fecha,
+                                        VentaMXN + OtrosIngresosMXN + EgresosMXN,
+                                        VentaMXN + OtrosIngresosMXN)) AS MontoSV,
+                                    dtCreated,
+                                    COALESCE(Servicio, 'Otros') as Servicio
+                                FROM
+                                    t_hoteles_test a
+                                        LEFT JOIN
+                                    t_masterlocators ml ON a.Localizador = ml.masterlocatorid
+                                        LEFT JOIN
+                                    itemTypes it ON a.itemType = it.type
+                                        AND a.categoryId = it.category
+                                WHERE
+                                    a.Fecha BETWEEN @inicio AND @fin
+                                GROUP BY Fecha, branchid , COALESCE(asesor,0) , COALESCE(Servicio, 'Otros')");
+            
+            $this->db->query("ALTER TABLE ventaPdv ADD PRIMARY KEY (Fecha, Servicio(15), branchid, asesor)");
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS byPDV");
+            $this->db->query("CREATE TEMPORARY TABLE byPDV
+                                SELECT 
+                                    a.PDV,
+                                    displayNameShort,
+                                    zc.nombreZona AS Zona,
+                                    FINDCOORDDAYPDV(f.Fecha, zc.id, 2) AS Coordinador,
+                                    FINDSUPERDAYPDV(f.Fecha, a.id,2) AS Supervisor,
+                                    SUM(COALESCE(Monto,0)) AS Monto,
+                                    SUM(IF(Servicio = 'Hotel',
+                                        COALESCE(Monto,0),
+                                        0)) AS MontoHotel,
+                                    COALESCE(meta_total_diaria,0) as meta_total_diaria,
+                                    COALESCE(meta_hotel_diaria,0) as meta_hotel_diaria,
+                                    COALESCE(meta_total,0) as meta_total,
+                                    COALESCE(meta_hotel,0) as meta_hotel
+                                FROM
+                                    Fechas f
+                                        JOIN
+                                    PDVs a
+                                        LEFT JOIN
+                                    pdv_zonesCustom zc ON a.customZone = zc.id
+                                        LEFT JOIN
+                                    ventaPdv vp ON a.branchid = vp.branchid
+                                        AND f.Fecha = vp.Fecha LEFT JOIN metas_pdv mp ON mp.mes=MONTH(@inicio) AND mp.anio=YEAR(@inicio) AND mp.pdv=a.id
+                                WHERE
+                                    Activo = 1 AND pais = 'MX' AND f.Fecha BETWEEN @inicio AND @fin
+                                GROUP BY a.PDV");
+            
+            $zoneQ = "SELECT 
+                                Zona,
+                                Coordinador,
+                                SUM(Monto) AS Monto,
+                                SUM(MontoHotel) AS MontoHotel,
+                                SUM(meta_total) AS meta_Zona,
+                                SUM(meta_total)/DAY(@fin) AS meta_Zona_diaria,
+                                SUM(meta_hotel) AS MetaHotel_Zona,
+                                SUM(meta_hotel)/DAY(@fin) AS MetaHotel_Zona_diaria
+                            FROM
+                                byPDV
+                            GROUP BY Zona";
+
+            $superQ = "SELECT
+                            Zona,
+                            Supervisor,
+                            SUM(Monto) AS Monto,
+                            SUM(MontoHotel) AS MontoHotel,
+                            SUM(meta_total) AS meta_Super,
+                            SUM(meta_hotel) AS MetaHotel_Super,
+                            SUM(meta_total)/DAY(@fin) AS meta_Super_diaria,
+                            SUM(meta_hotel)/DAY(@fin) AS MetaHotel_Super_diaria
+                        FROM
+                            byPDV
+                        GROUP BY Supervisor";
+
+            $pdvQ = "SELECT
+                            Zona,
+                            Supervisor,
+                            displayNameShort as PDV,
+                            SUM(Monto) AS Monto,
+                            SUM(MontoHotel) AS MontoHotel,
+                            SUM(meta_total) AS meta_PDV,
+                            SUM(meta_hotel) AS MetaHotel_PDV,
+                            SUM(meta_total)/DAY(@fin) AS meta_PDV_diaria,
+                            SUM(meta_hotel)/DAY(@fin) AS MetaHotel_PDV_diaria
+                        FROM
+                            byPDV
+                        GROUP BY PDV";
+
+            $this->db->query("CREATE TEMPORARY TABLE dailyPdv SELECT 
+                            dp.Fecha,
+                            NOMBREASESOR(dp.asesor, 2) AS Nombre,
+                            NOMBREPUESTO(dp.puesto) as Puesto,
+                            FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
+                            COALESCE(ap.pdv, dp.oficina) AS pdvId,
+                            SUM(COALESCE(Monto, 0)) AS Monto,
+                            SUM(IF(Servicio = 'Hotel',
+                                COALESCE(Monto, 0),
+                                0)) AS MontoHotel,
+                            IF(js=je,0,COALESCE(meta_total_diaria/mp.asesores,0)) as metaTotal,
+                            IF(js=je,0,COALESCE(meta_hotel_diaria/mp.asesores,0)) as metaHotel
+                        FROM
+                            dep_asesores dp
+                                LEFT JOIN
+                            asesores_programacion ap ON dp.asesor = ap.asesor
+                                AND dp.Fecha = ap.Fecha
+                                LEFT JOIN
+                            ventaPdv v ON dp.asesor = v.asesor
+                                AND dp.Fecha = v.Fecha
+                                LEFT JOIN
+                            metas_pdv mp ON COALESCE(ap.pdv, dp.oficina) = mp.pdv
+                                AND MONTH(@inicio) = mp.mes
+                                AND YEAR(@inicio) = mp.anio
+                        WHERE
+                            dp.puesto NOT IN (11 , 17, 48)
+                                AND dp.Fecha BETWEEN @inicio AND @fin
+                                AND dp.dep = 29
+                                AND dp.vacante IS NOT NULL
+                        GROUP BY dp.Fecha , dp.asesor");
+
+            $dailyQ = "SELECT * FROM dailyPdv";
+            $sumAllQ = "SELECT * FROM byPDV";
+            
+            $sumQ = "SELECT 
+                        Nombre,
+                        Puesto,
+                        Supervisor,
+                        SUM(COALESCE(Monto, 0)) AS Monto,
+                        SUM(MontoHotel) AS MontoHotel,
+                        SUM(metaTotal) AS meta_asesor,
+                        SUM(metaHotel) AS MetaHotel_asesor,
+                        SUM(IF(Fecha <= CURDATE(), metaTotal, 0)) AS meta_asesor_diaria,
+                        SUM(IF(Fecha <= CURDATE(), metaHotel, 0)) AS MetaHotel_asesor_diaria
+                    FROM
+                        dailyPdv
+                    GROUP BY Nombre";
+
+            if( $zQ = $this->db->query( $zoneQ ) ){
+                if( $sQ = $this->db->query( $superQ ) ){
+                    if( $pQ = $this->db->query( $pdvQ ) ){
+                        if( $dQ = $this->db->query( $dailyQ ) ){
+                            if( $sumQ = $this->db->query( $sumQ ) ){
+                                if( $sumAQ = $this->db->query( $sumAllQ ) ){
+
+                                    okResponse('Data Obtenida', 'data', array( 'zones' => $zQ->result_array(), 
+                                                                                'super' => $sQ->result_array(), 
+                                                                                'pdv' => $pQ->result_array(), 
+                                                                                'daily' => $dQ->result_array(), 
+                                                                                'sumAll' => $sumAQ->result_array(), 
+                                                                                'asesor' => $sumQ->result_array()), 
+                                                $this);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            
+
+        });
+
     }
 
 }
