@@ -85,6 +85,7 @@ class DetalleAsesores extends REST_Controller {
     return $solicitudes;
 
   }
+
     
   public function detalle_get(){
       
@@ -272,6 +273,56 @@ class DetalleAsesores extends REST_Controller {
           
           if( $q = $this->db->query($query)){
               okResponse("Registro cargado correctamente", "data", $q->result_array(), $this);
+          }else{
+              errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+          }
+             
+      });
+
+
+  }  
+    
+  public function vacaciones_get(){
+      
+      $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+          
+          $asesor = $this->uri->segment(3);
+          
+          $this->db->query("SET @asesor=$asesor");
+
+          $query = "SELECT 
+                        *
+                    FROM
+                        asesores_vacaciones
+                    WHERE
+                        asesor = $asesor
+                    ORDER BY Fecha ";
+
+          
+          if( $q = $this->db->query($query)){
+
+            $queryDet = "SELECT 
+                            id,
+                            MIN(Fecha) AS Inicio,
+                            MAX(Fecha) AS Fin,
+                            SUM(a) AS Dias,
+                            caso AS Caso,
+                            Last_Update AS FechaCaptura,
+                            NOMBREASESOR(changed_by,1) as Captura
+                        FROM
+                            asesores_ausentismos
+                        WHERE
+                            asesor = $asesor AND ausentismo = 1
+                        GROUP BY id
+                        ORDER BY Inicio";
+
+
+            if( $d = $this->db->query($queryDet)){
+                okResponse("Registro cargado correctamente", "data", $q->result_array(), $this, 'detalle', $d->result_array());
+            }else{
+                errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
           }else{
               errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
           }

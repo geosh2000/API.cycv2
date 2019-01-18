@@ -923,6 +923,13 @@ public function pyaV2_get(){
                 
             }
 
+            $call = 0;
+
+            if( $data[0]['ausentismo'] == 1 ){
+                $this->db->query("CALL vacaciones(".$data[0]['asesor'].")");
+                $call = 1;
+            }
+
             
             okResponse( 'Ausentismos Guardados', 'data', true, $this );
         }else{
@@ -1311,11 +1318,18 @@ public function pyaV2_get(){
           
        $id = $this->uri->segment(3);
 
+       $q = $this->db->query("SELECT asesor, ausentismo FROM asesores_ausentismos WHERE id=$id GROUP BY id");
+       $data = $q->row_array();
+
         $this->db->where('id', $id);
 
         if( $q = $this->db->delete('asesores_ausentismos') ){
-            
+
             $this->db->query("DELETE FROM `Dias Pendientes Redimidos` WHERE id_ausentismo = $id");
+
+            if( $data['ausentismo'] == 1 ){
+                $this->db->query("CALL vacaciones(".$data['asesor'].")");
+            }
             
             okResponse( 'Ausentismo Eliminado', 'data', true, $this );
         }else{
