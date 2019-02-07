@@ -519,5 +519,35 @@ class Queuemetrics extends REST_Controller {
 
   }
 
+  public function lastAhtLimit_get(){
+
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+      
+      $query = "SELECT 
+                    qNumber, SUM(tt) / SUM(calls) AS aht
+                FROM
+                    calls_summary
+                WHERE
+                    Fecha BETWEEN ADDDATE(CURDATE(), - 7) AND ADDDATE(CURDATE(), - 1)
+                        AND grupo != 'abandon'
+                GROUP BY qNumber";
+
+      if( $q = $this->db->query($query) ){
+
+        $result=array();
+
+        foreach( $q->result_array() as $index => $aht ){
+          $result[$aht['qNumber']] = $aht['aht'];
+        }
+
+        okResponse( 'Data obtenida', 'data', $result, $this );
+      }else{
+        errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+      }
+
+    });
+
+  }
+
 
 }

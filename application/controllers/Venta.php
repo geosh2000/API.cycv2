@@ -1358,35 +1358,37 @@ class Venta extends REST_Controller {
                         GROUP BY PDV";
 
             $this->db->query("CREATE TEMPORARY TABLE dailyPdv SELECT 
-                            dp.Fecha,
-                            NOMBREASESOR(dp.asesor, 2) AS Nombre,
-                            NOMBREPUESTO(dp.puesto) as Puesto,
-                            FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
-                            COALESCE(ap.pdv, dp.oficina) AS pdvId,
-                            SUM(COALESCE(Monto, 0)) AS Monto,
-                            SUM(IF(Servicio = 'Hotel',
-                                COALESCE(Monto, 0),
-                                0)) AS MontoHotel,
-                            IF(js=je,0,COALESCE(meta_total_diaria/mp.asesores,0)) as metaTotal,
-                            IF(js=je,0,COALESCE(meta_hotel_diaria/mp.asesores,0)) as metaHotel
-                        FROM
-                            dep_asesores dp
-                                LEFT JOIN
-                            asesores_programacion ap ON dp.asesor = ap.asesor
-                                AND dp.Fecha = ap.Fecha
-                                LEFT JOIN
-                            ventaPdv v ON dp.asesor = v.asesor
-                                AND dp.Fecha = v.Fecha
-                                LEFT JOIN
-                            metas_pdv mp ON COALESCE(ap.pdv, dp.oficina) = mp.pdv
-                                AND MONTH(@inicio) = mp.mes
-                                AND YEAR(@inicio) = mp.anio
-                        WHERE
-                            dp.puesto NOT IN (11 , 17, 48)
-                                AND dp.Fecha BETWEEN @inicio AND @fin
-                                AND dp.dep = 29
-                                AND dp.vacante IS NOT NULL
-                        GROUP BY dp.Fecha , dp.asesor");
+                                    dp.Fecha,
+                                    NOMBREASESOR(dp.asesor, 2) AS Nombre,
+                                    NOMBREPUESTO(dp.puesto) as Puesto,
+                                    FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
+                                    COALESCE(ap.pdv, dp.oficina) AS pdvId,
+                                    SUM(COALESCE(Monto, 0)) AS Monto,
+                                    SUM(IF(Servicio = 'Hotel',
+                                        COALESCE(Monto, 0),
+                                        0)) AS MontoHotel,
+                                    IF(COALESCE(js,1)=COALESCE(je,0) AND COALESCE(au.a,0)!=1,0,COALESCE(meta_total_diaria/mp.asesores,0)) as metaTotal,
+                                    IF(COALESCE(js,1)=COALESCE(je,0) AND COALESCE(au.a,0)!=1,0,COALESCE(meta_hotel_diaria/mp.asesores,0)) as metaHotel
+                                FROM
+                                    dep_asesores dp
+                                        LEFT JOIN
+                                    asesores_programacion ap ON dp.asesor = ap.asesor
+                                        AND dp.Fecha = ap.Fecha
+                                        LEFT JOIN
+                                    ventaPdv v ON dp.asesor = v.asesor
+                                        AND dp.Fecha = v.Fecha
+                                        LEFT JOIN
+                                    metas_pdv mp ON COALESCE(ap.pdv, dp.oficina) = mp.pdv
+                                        AND MONTH(@inicio) = mp.mes
+                                        AND YEAR(@inicio) = mp.anio
+                                        LEFT JOIN 
+                                    asesores_ausentismos au ON dp.asesor=au.asesor AND dp.Fecha=au.Fecha AND au.a=1
+                                WHERE
+                                    dp.puesto NOT IN (11 , 17, 48)
+                                        AND dp.Fecha BETWEEN @inicio AND @fin
+                                        AND dp.dep = 29
+                                        AND dp.vacante IS NOT NULL
+                                GROUP BY dp.Fecha , dp.asesor");
 
             $dailyQ = "SELECT * FROM dailyPdv";
             $sumAllQ = "SELECT * FROM byPDV";

@@ -211,9 +211,10 @@ class Mailing extends REST_Controller {
                                         (SELECT 
                                             asesor, dep, puesto
                                         FROM
-                                            dep_asesores
+                                            dep_asesores a LEFT JOIN PCRCs b ON a.dep=b.id
                                         WHERE
                                             dep NOT IN (29,1) AND vacante IS NOT NULL
+                                            AND sede = 'MX'
                                                 AND Fecha = CURDATE()) a
                                             LEFT JOIN
                                         (SELECT 

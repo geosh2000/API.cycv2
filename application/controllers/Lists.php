@@ -738,5 +738,57 @@ class Lists extends REST_Controller {
       
     }
 
+    public function monitorSkills_get(){
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $pais = $this->uri->segment(3);
+            
+            $query = "SELECT 
+                        CONCAT(monShow,'_',direction) as skill,
+                        CONCAT(NOMBREDEP(monShow),
+                                '  ',
+                                IF(direction = 1,
+                                    '(Inbound)',
+                                    '(Outbound)')) AS name,
+                        direction,
+                        CONCAT('[',
+                                GROUP_CONCAT('\"', queue, '\"'),
+                                ']') AS qs,
+                        CONCAT('{',
+                                GROUP_CONCAT('\"', queue, '\":\"', shortName, '\"'),
+                                '}') AS nameQs
+                    FROM
+                        Cola_Skill a
+                            LEFT JOIN
+                        PCRCs b ON a.monShow = b.parentId
+                    WHERE
+                        sede = '$pais' AND parentID = b.id
+                    GROUP BY monShow , direction
+                    HAVING name IS NOT NULL";
+            
+        
+            if( $q = $this->db->query($query) ){
+
+                $result = array();
+
+                foreach( $q->result_array() as $index => $info ){
+                    array_push($result,array(
+                        'skill' => $info['skill'],
+                        'name'  => $info['name'],
+                        'qs'    => json_decode($info['qs']),
+                        'nameQs'=> json_decode($info['nameQs'],true)
+                    ));
+                }
+                
+                okResponse( 'Info Obtenida', 'data', $result, $this);
+                
+            }else{
+                errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            }
+
+            return true;
+        });
+      
+    }
 
 }
