@@ -96,6 +96,62 @@ class Completer extends REST_Controller {
     
       
   }
+
+  public function searchAffiliate_get(){
+      
+      $special = array('á', 'é', 'í', 'ó', 'ú', 'ñ');
+      $replace = array('a', 'e', 'i', 'o', 'u', 'n');
+      
+      $field    = $this->uri->segment(3);
+      $active   = $this->uri->segment(4);
+      $term     = $this->uri->segment(5);
+      
+      if( trim($term) == "" ){
+          $this->response("");
+      }
+      
+      
+      $search = explode("%20", str_replace('.', ' ', $term));
+      
+      
+      $this->codigosName();
+      
+      $this->db->select("idAffiliate as idAffiliate, shortName, CONCAT(description, '  ') as description, CONCAT(shortName, ' (',description,')') as displayName, isActive", FALSE)
+          ->select("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (',description,')')),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a') as searchTerm")
+          ->from('cat_affiliateSiteIds')
+          ->group_by("CONCAT(shortName, ' (',description,')')", FALSE)
+          ->order_by("CONCAT(shortName, ' (', description, ')')", FALSE);
+      
+      // Active Filter
+      switch( $active ){
+          case 0:
+            $this->db->where("isActive",0, FALSE);
+            break;
+          case 1:
+            $this->db->where("isActive",1, FALSE);
+            break;
+      }
+
+      
+      // Term Filter
+      foreach($search as $i => $info){
+          if( $info != "" ){
+            $find = str_replace($special, $replace, strtolower($info));
+            $this->db->like("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (', description, ')')),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a')", $find);
+          }
+      }
+      
+      $query = $this->db->get_compiled_select();
+      
+      if( $completer = $this->db->query( $query ) ){
+          $this->response( $completer->result_array() );
+      }else{
+          errResponse('Error al obtener coincidencias', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error(), 'q', $query );
+      }
+
+    
+      
+  }
     
   public function codigosName(){
       

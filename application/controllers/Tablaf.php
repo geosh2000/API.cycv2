@@ -224,9 +224,11 @@ class Tablaf extends REST_Controller {
         // =================================================
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS pauseAsesores");
             $this->db->query("CREATE TEMPORARY TABLE pauseAsesores SELECT 
-                                    a.*, Productiva, IF(skill = dep, a.asesor, NULL) AS DistAsesor, dep, cc
+                                    a.*, Productiva, IF(l.skill = dep, a.asesor, NULL) AS DistAsesor, dep, cc
                                 FROM
-                                    asesores_pausas a
+                                    asesores_logs l LEFT JOIN
+                                    asesores_pausas a ON a.asesor = l.asesor
+                                        AND CAST(a.Inicio AS DATE) = CAST(login AS DATE)
                                         LEFT JOIN
                                     dep_asesores b ON a.asesor = b.asesor
                                         AND CAST(a.Inicio AS DATE) = b.Fecha LEFT JOIN Tipos_pausas c ON c.pausa_id = a.tipo 
@@ -234,8 +236,8 @@ class Tablaf extends REST_Controller {
                                     cc_apoyo d ON a.asesor = d.asesor
                                         AND CAST(a.Inicio AS DATE) BETWEEN d.inicio AND d.fin
                                 WHERE
-                                    a.Inicio BETWEEN @inicio AND CAST(CONCAT(@fin, ' 23:59:00') AS DATETIME)
-                                        AND skill IN ".$params['skill']);
+                                    login BETWEEN @inicio AND CAST(CONCAT(CAST(@fin as DATE), ' 23:59:00') AS DATETIME)
+                                        AND l.skill IN ".$params['skill']);
 
                                 $this->db->query("DROP TEMPORARY TABLE IF EXISTS pauseOK");
                                 $this->db->query("CREATE TEMPORARY TABLE pauseOK SELECT 
@@ -260,7 +262,8 @@ class Tablaf extends REST_Controller {
                                         0)) AS PP
                                 FROM
                                     pauseAsesores a
-                                GROUP BY FechaOK , skill, grupo");
+                                GROUP BY FechaOK , skill, grupo HAVING  FechaOK IS NOT NULL");
+                                
         // =================================================
         // END Query Pausas
         // =================================================
@@ -339,8 +342,8 @@ class Tablaf extends REST_Controller {
                                     COALESCE(PP,0) as PP,
                                     COALESCE(Utilizacion,0) as Utilizacion, 
                                     COALESCE(Utilizacion,0)/COALESCE(Sesion,0) as pUtilizacion, 
-                                    COALESCE(inTT,0) + COALESCE(outEfectivasTT,0) + COALESCE(outIntentosTT,0) as Ocupacion, 
-                                    (COALESCE(inTT,0) + COALESCE(outEfectivasTT,0) + COALESCE(outIntentosTT,0))/COALESCE(Utilizacion,0) as pOcupacion, 
+                                    COALESCE(inTT,0) + COALESCE(outEfectivasTT,0) + COALESCE(outIntentosTT,0) + COALESCE(PP,0) as Ocupacion, 
+                                    (COALESCE(inTT,0) + COALESCE(outEfectivasTT,0) + COALESCE(outIntentosTT,0) + COALESCE(PP,0))/COALESCE(Utilizacion,0) as pOcupacion, 
                                     COALESCE(Ftes,0) as Ftes, 
                                     COALESCE(HC_dia,0) as HC_dia
                                 FROM

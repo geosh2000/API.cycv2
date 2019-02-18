@@ -281,6 +281,8 @@ class Queuemetrics extends REST_Controller {
                         Curpausetst as origPauseTst,
                         RT_answered as answeredTst,
                         RT_dnis,
+                        obCaller,
+                        obTst,
                         pr.color,
                         a.Last_Update,
                         IF(a.Freesincepauorcalltst = 0, Logon, Freesincepauorcalltst) as freeSince
