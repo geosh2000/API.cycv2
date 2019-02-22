@@ -116,19 +116,22 @@ class Completer extends REST_Controller {
       
       $this->codigosName();
       
-      $this->db->select("idAffiliate as idAffiliate, shortName, CONCAT(description, '  ') as description, CONCAT(shortName, ' (',description,')') as displayName, isActive", FALSE)
-          ->select("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (',description,')')),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a') as searchTerm")
-          ->from('cat_affiliateSiteIds')
-          ->group_by("CONCAT(shortName, ' (',description,')')", FALSE)
-          ->order_by("CONCAT(shortName, ' (', description, ')')", FALSE);
+      $this->db->select("affiliateSiteId as idAffiliate, shortName, CONCAT(description,' ',IF(COALESCE(languageId,1)=1,'ESP ','ENG ')) as description, CONCAT(shortName, ' (',campaignName,')') as displayName, cp.isActive", FALSE)
+          ->select("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (',campaignName,') ',IFNULL(didPrefix,''))),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a') as searchTerm")
+          ->from('cat_campaignCC cp')
+          ->join('cat_didCC dd','cp.id = dd.campaignId','left')
+          ->join('cat_affiliateSites afs','cp.affiliateSiteId=afs.id','left')
+          ->join('cat_affiliates af','afs.idAffiliate=af.id','left')
+          ->group_by("CONCAT(shortName, ' (',campaignName,')')", FALSE)
+          ->order_by("CONCAT(shortName, ' (',campaignName, ')')", FALSE);
       
       // Active Filter
       switch( $active ){
           case 0:
-            $this->db->where("isActive",0, FALSE);
+            $this->db->where("cp.isActive",0, FALSE);
             break;
           case 1:
-            $this->db->where("isActive",1, FALSE);
+            $this->db->where("cp.isActive",1, FALSE);
             break;
       }
 
@@ -137,7 +140,7 @@ class Completer extends REST_Controller {
       foreach($search as $i => $info){
           if( $info != "" ){
             $find = str_replace($special, $replace, strtolower($info));
-            $this->db->like("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (', description, ')')),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a')", $find);
+            $this->db->like("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (', campaignName, ') ', IFNULL(didPrefix,''))),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a')", $find);
           }
       }
       
