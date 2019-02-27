@@ -46,7 +46,7 @@ class Venta extends REST_Controller {
                             END) as TIME) AS H", FALSE)
                 ->select("Hora")
                 ->from('base a')
-                ->join("config_tipoRsva d", "IF(a.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, a.dep)) = d.dep
+                ->join("config_tipoRsva d", "IF(a.dep IS NULL, IF(a.asesor <= - 1, - 1, 0), IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, a.dep)) = d.dep
                                             AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo", "left", FALSE)
                 ->group_by(array("a.Fecha", "H", "gpoTipoRsvaOk"))
                 ->order_by("a.Fecha", "H");
@@ -84,7 +84,7 @@ class Venta extends REST_Controller {
               ->select("SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto", FALSE)
               ->from("locs a")
               ->join("dep_asesores c", "a.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
-              ->join("config_tipoRsva d", "IF(c.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
+              ->join("config_tipoRsva d", "IF(c.dep IS NULL, IF(a.asesor <= - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
                                             AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo", "left", FALSE)
               ->group_by(array("a.Fecha", "H", "gpoTipoRsvaOk"))
               ->order_by("a.Fecha", "H");
@@ -226,7 +226,7 @@ class Venta extends REST_Controller {
                         ->select('servicio as producto', FALSE)
                         ->from("base a")
                         ->join("config_tipoRsva tp", "IF(a.dep IS NULL,
-                                IF(a.asesor = - 1, - 1, 0),
+                                IF(a.asesor <= - 1, - 1, 0),
                                 IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                     0,
                                     IF(a.dep = 29 AND cc IS NOT NULL,
@@ -641,7 +641,7 @@ class Venta extends REST_Controller {
                 ->select("SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto, IF(SUM(VentaMXN)>0 OR SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN)>0, Localizador, NULL) as NewLoc", FALSE)
                 ->join("chanGroups b", "a.chanId = b.id", "left")
                 ->join("dep_asesores c", "a.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
-                ->join("config_tipoRsva d", "IF(c.dep IS NULL, IF(a.asesor = - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
+                ->join("config_tipoRsva d", "IF(c.dep IS NULL, IF(a.asesor <= - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = d.dep
                                                 AND IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = d.tipo", "left", FALSE)
                 ->where("a.Fecha", $data['Fecha'])
                 ->group_by('Localizador')
@@ -794,7 +794,7 @@ class Venta extends REST_Controller {
                     ->from("locsCount a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,
-                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.asesor <= - 1, - 1, 0),
                                                 IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
                                                     a.dep)) = c.dep", "left", FALSE);
@@ -818,7 +818,7 @@ class Venta extends REST_Controller {
                     ->from("baseOK a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,
-                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.asesor <= - 1, - 1, 0),
                                                 IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
                                                     a.dep)) = c.dep", "left", FALSE)
@@ -986,7 +986,7 @@ class Venta extends REST_Controller {
                     ->from("locsCount a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,
-                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.asesor <= - 1, - 1, 0),
                                                 IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52, 56, 55,73),
                                                     0,
                                                     a.dep)) = c.dep", "left", FALSE);
@@ -1010,7 +1010,7 @@ class Venta extends REST_Controller {
                     ->from("baseOK a")
                     ->join("config_tipoRsva c", "IF(a.tipo IS NULL OR a.tipo='',0, a.tipo) = c.tipo
                                                 AND IF(a.dep IS NULL,
-                                                IF(a.asesor = - 1, - 1, 0),
+                                                IF(a.asesor <= - 1, - 1, 0),
                                                 IF(a.dep NOT IN (0 , 3, 5, 29, 35, 50, 52, 56, 55,73),
                                                     0,
                                                     a.dep)) = c.dep", "left", FALSE)
@@ -1153,7 +1153,7 @@ class Venta extends REST_Controller {
                     ->join("dep_asesores dp","ml.asesor = dp.asesor
                                                 AND a.Fecha = dp.Fecha","left",FALSE)
                     ->join("config_tipoRsva tr","IF(dp.dep IS NULL,
-                                                IF(ml.asesor = - 1, - 1, 0),
+                                                IF(ml.asesor <= - 1, - 1, 0),
                                                 IF(dp.dep NOT IN (0 , 3, 5, 29, 35, 50, 52),
                                                     0,
                                                     dp.dep)) = tr.dep
@@ -1454,6 +1454,193 @@ class Venta extends REST_Controller {
                 }
             }
             
+            errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            
+
+        });
+
+    }
+
+    public function fcActual_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $this->db->query("SET @date = CURDATE()");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
+            $this->db->query("CREATE TEMPORARY TABLE calls SELECT 
+                IF(Fecha=CURDATE(),'td','yd') as dia, grupo, SUM(calls) AS llamadas
+            FROM
+                calls_summary
+            WHERE
+                Fecha BETWEEN ADDDATE(@date,-1) AND @date AND Skill = 35
+                    AND direction = 1
+                    AND grupo != 'abandon'
+                    AND Hora < CAST(NOW() as TIME)
+            GROUP BY dia, grupo");
+            
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
+            $this->db->query("CREATE TEMPORARY TABLE locs SELECT 
+                IF(Fecha=CURDATE(),'td','yd') as dia, gpoOk, COUNT(DISTINCT Localizador) AS locs
+            FROM
+                (SELECT 
+                    a.Fecha, 
+                    Localizador,
+                        SUM(VentaMXN + OtrosIngresosMXN + EgresosMXN) AS Monto,
+                        gpoTipoRsva,
+                        IF(COALESCE(c.dep, 35) = 35, 'main', 'pdv') AS gpoOk
+                FROM
+                    t_hoteles_test a
+                LEFT JOIN t_masterlocators ml ON a.Localizador = ml.masterlocatorid AND CAST(dtCreated AS DATE) = Fecha
+                LEFT JOIN chanGroups b ON a.chanId = b.id
+                LEFT JOIN dep_asesores c ON ml.asesor = c.asesor
+                    AND a.Fecha = c.Fecha
+                LEFT JOIN cc_apoyo d ON ml.asesor = d.asesor
+                    AND a.Fecha BETWEEN d.inicio AND d.fin
+                LEFT JOIN config_tipoRsva ct ON IF(c.dep IS NULL, IF(ml.asesor <= - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = ct.dep
+                    AND IF(ml.tipo IS NULL OR ml.tipo = '', 0, ml.tipo) = ct.tipo
+                WHERE
+                    a.Fecha BETWEEN ADDDATE(@date,-1) AND @date
+                        AND marca = 'Marcas Propias'
+                        AND pais = 'MX'
+                        AND gpoTipoRsva = 'In'
+                        AND CAST(dtCreated AS DATE) BETWEEN ADDDATE(@date,-1) AND @date
+                        AND Hora < CAST(NOW() as TIME)
+                GROUP BY Localizador
+                HAVING Monto > 0) a
+            GROUP BY dia, gpoOk");
+            
+            $query = "SELECT 
+                a.*, locs, locs/llamadas as fc
+            FROM
+                calls a
+                    LEFT JOIN
+                locs b ON a.grupo = b.gpoOk AND a.dia=b.dia";
+
+            $queryParams = "SELECT * FROM config_fcParams WHERE skill = 35 ORDER BY b";
+
+            if( $q = $this->db->query( $query ) ){
+                
+                if( $pQ = $this->db->query( $queryParams ) ){
+                    $result = array('main'=>array(), 'pdv'=>array());
+                    foreach($q->result_array() as $index => $info){
+                        $result[$info['grupo']][$info['dia']]=$info;
+                    }
+
+                    $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM t_hoteles_test WHERE Fecha=CURDATE()");
+
+                    okResponse('Data Obtenida', 'data', array('result'=>$result, 'lu'=>$luQ->row_array()), $this, 'params', $pQ->result_array());
+                }
+            }
+
+            errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            
+
+        });
+
+    }
+
+    public function ventaPorHora_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $inicio = $this->uri->segment(3);
+            $skill = $this->uri->segment(4);
+
+            $this->db->query("SET @inicio = '$inicio'");
+            $this->db->query("SET @fin = @inicio");
+            $this->db->query("SET @skill = $skill");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS locs");
+            $this->db->query("CREATE TEMPORARY TABLE locs SELECT Localizador, Servicio, isPaq, SUM(VentaMXN + OtrosIngresosMXN) AS Monto FROM t_hoteles_test a LEFT JOIN itemTypes it ON a.itemType=it.type AND a.categoryId=it.category WHERE Fecha BETWEEN @inicio AND @fin GROUP BY Localizador, Servicio HAVING Monto>0");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS asesor_hour");
+            $this->db->query("CREATE TEMPORARY TABLE asesor_hour SELECT a.Fecha, a.asesor, Hora_group FROM dep_asesores a JOIN HoraGroup_Table hg WHERE dep=@skill AND vacante IS NOT NULL AND puesto!= 11 AND Fecha BETWEEN @inicio AND @fin");
+            $this->db->query("ALTER TABLE asesor_hour ADD PRIMARY KEY (Fecha, asesor, Hora_group)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
+            $this->db->query("CREATE TEMPORARY TABLE calls SELECT 
+                a.*, Hora_group, Skill, direction
+            FROM
+                t_Answered_Calls a
+                    LEFT JOIN
+                Cola_Skill b ON a.qNumber = b.queue
+                    LEFT JOIN
+                HoraGroup_Table hg ON a.Hora BETWEEN Hora_time AND Hora_end
+            WHERE
+                asesor > 0 AND Answered = 1
+                    AND Fecha BETWEEN @inicio AND @fin
+            HAVING Skill = @skill AND direction = 1");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS asesor_calls");
+            $this->db->query("CREATE TEMPORARY TABLE asesor_calls 
+            SELECT 
+                Fecha,
+                asesor,
+                Hora_group, Hora,
+                Skill,
+                direction,
+                COUNT(*) AS calls
+            FROM
+                calls
+            GROUP BY Fecha , asesor , Hora_group");
+            $this->db->query("ALTER TABLE asesor_calls ADD PRIMARY KEY (Fecha, asesor(10), Hora_group)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS asesor_sum");
+            $this->db->query("CREATE TEMPORARY TABLE asesor_sum SELECT 
+                a.Fecha,
+                a.asesor,    
+                Hora_group,
+                SUM(COALESCE(Monto,0)) AS Monto,
+                SUM(IF(Servicio = 'Hotel' AND isPaq=0, Monto,0)) AS MontoHotel,
+                SUM(IF(Servicio = 'Vuelo' AND isPaq=0, Monto,0)) AS MontoVuelo,
+                SUM(IF(isPaq!=0, Monto,0)) AS MontoPaquete,
+                SUM(IF(Servicio NOT IN ('Hotel','Vuelo') AND isPaq=0, Monto,0)) AS MontoOtros,
+                COUNT(DISTINCT Localizador) AS Locs
+            FROM
+                dep_asesores a
+                    LEFT JOIN
+                t_masterlocators b ON a.asesor = b.asesor
+                    AND a.Fecha = CAST(b.dtCreated AS DATE)
+                    LEFT JOIN
+                locs c ON masterlocatorid = c.Localizador
+                    LEFT JOIN
+                HoraGroup_Table hg ON CAST(dtCreated as TIME) BETWEEN Hora_time AND Hora_end
+            WHERE
+                a.Fecha BETWEEN @inicio AND @fin AND dep = @skill
+                    AND vacante IS NOT NULL
+            GROUP BY Fecha , Hora_group , asesor");
+            $this->db->query("ALTER TABLE asesor_sum ADD PRIMARY KEY (Fecha, Hora_group, asesor)");
+
+            $query = "SELECT 
+                a.Fecha,
+                a.asesor,
+                NOMBREASESOR(a.asesor, 2) AS Nombre,
+                a.Hora_group,
+                COALESCE(Monto, 0) AS Monto,
+                COALESCE(MontoHotel, 0) AS MontoHotel,
+                COALESCE(MontoVuelo, 0) AS MontoVuelo,
+                COALESCE(MontoPaquete, 0) AS MontoPaquete,
+                COALESCE(MontoOtros, 0) AS MontoOtros,
+                COALESCE(Locs, 0) AS Locs,
+                COALESCE(calls,0) As Llamadas
+            FROM
+                asesor_hour a
+                    LEFT JOIN
+                asesor_sum b ON a.asesor = b.asesor
+                    AND a.Fecha = b.Fecha
+                    AND a.Hora_group = b.Hora_group
+                    LEFT JOIN
+                asesor_calls c ON a.asesor = c.asesor
+                    AND a.Fecha = c.Fecha
+                    AND a.Hora_group = c.Hora_group";
+
+            if( $q = $this->db->query( $query ) ){
+                
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this);
+
+            }
+
             errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
             
 

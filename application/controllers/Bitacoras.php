@@ -26,46 +26,27 @@ class Bitacoras extends REST_Controller {
       $this->db->query("SET @inicio = CAST('$fecha' as DATE)");
       $this->db->query("SET @skill = $skill");
       
-      $this->db->query("DROP TEMPORARY TABLE IF EXISTS calls");
-      $this->db->query("CREATE TEMPORARY TABLE calls SELECT 
-          a.*,
-          HOUR(Hora) + IF(MINUTE(Hora) >= 30, .5, 0) AS HG,
-          Skill,
-          direction
-      FROM
-          t_Answered_Calls a
-              LEFT JOIN
-          Cola_Skill b ON a.Cola = b.Cola
-      WHERE
-          Fecha = @inicio
-      HAVING direction = 1 AND Skill = @skill");
-      $this->db->query("ALTER TABLE calls ADD PRIMARY KEY (Fecha, Hora, Llamante(15) )");
-      $this->db->query("ALTER TABLE calls ADD INDEX skill (`Skill` ASC)");
-
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS callsSum");
       $this->db->query("CREATE TEMPORARY TABLE callsSum SELECT 
-          HG, Skill, 
-          COUNT(IF(Answered = 1
-                  AND TIME_TO_SEC(Espera) <= IF(Skill IN (3 , 35), 20, 30),
-              ac_id,
-              NULL)) / COUNT(*) * 100 AS SLA,
-          COUNT(*) AS Llamadas,
-          COALESCE(AVG(IF(Answered = 1 AND dep!=29,
-                      TIME_TO_SEC(Duracion_Real),
-                      NULL)),
-                  0) AS AHTDep,
-          COALESCE(AVG(IF(Answered = 1 AND dep=29,
-              TIME_TO_SEC(Duracion_Real),
-              NULL)),
-                  0) AS AHTPdv,
-          COALESCE(AVG(IF(Answered = 1,
-              TIME_TO_SEC(Duracion_Real),
-              NULL)),
-                  0) AS AHTTotal,
-          COUNT(IF(Answered = 0, ac_id, NULL)) / COUNT(*) * 100 AS Abandon
-      FROM
-          calls a LEFT JOIN dep_asesores b ON a.asesor=b.asesor AND @inicio=b.Fecha
-      GROUP BY HG, Skill");
+                HOUR(Hora) + IF(MINUTE(Hora) >= 30, .5, 0) AS HG,
+                Skill,
+                COALESCE(SUM(IF(@skill IN (35 , 3), sla20, sla30)) / SUM(calls) * 100,
+                        100) AS SLA,
+                COALESCE(SUM(calls), 0) AS Llamadas,
+                COALESCE(SUM(IF(grupo = 'main', tt, 0)) / SUM(IF(grupo = 'main', calls, 0)),
+                        0) AS AHTDep,
+                COALESCE(SUM(IF(grupo = 'pdv', tt, 0)) / SUM(IF(grupo = 'pdv', calls, 0)),
+                        0) AS AHTPdv,
+                COALESCE(SUM(IF(grupo != 'abandon', tt, 0)) / SUM(IF(grupo != 'abandon', calls, 0)),
+                        0) AS AHTTotal,
+                COALESCE(SUM(IF(grupo = 'abandon', calls, 0)) / SUM(calls) * 100,
+                        0) AS Abandon
+            FROM
+                calls_summary
+            WHERE
+                Fecha = @inicio AND Skill = @skill
+                    AND direction = 1
+            GROUP BY Hora;");
       $this->db->query("ALTER TABLE callsSum ADD PRIMARY KEY (HG, Skill)");
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS forecast");
@@ -84,88 +65,58 @@ class Bitacoras extends REST_Controller {
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS j");
       $this->db->query("CREATE TEMPORARY TABLE j SELECT 
-          Hora_group
-          ,dep
-          ,COUNT(DISTINCT b.asesor) AS prog_normal
-      FROM
-          HoraGroup_Table a
-              LEFT JOIN
-          asesores_programacion b ON js <= CASTDATETIME(@inicio,CASTDATETIME(@inicio,Hora_end))
-              AND je > CASTDATETIME(@inicio,Hora_time)
-              LEFT JOIN
-          dep_asesores dp ON b.asesor = dp.asesor
-              AND @inicio = dp.Fecha 
-              LEFT JOIN 
-          asesores_ausentismos au ON b.asesor=au.asesor AND CAST(js as DATE)=au.Fecha 
-              LEFT JOIN config_tiposAusentismos tp ON au.ausentismo=tp.id
-      WHERE
-          js BETWEEN ADDDATE(@inicio,-1) AND ADDDATE(@inicio,1) AND dep!=29 AND vacante IS NOT NULL AND js!=je AND js IS NOT NULL
-          AND (COALESCE(au.a,0) = 0 OR tp.programable=0)
-          AND dp.dep=@skill AND puesto != 11
-      GROUP BY Hora_group , dep");
-      $this->db->query("ALTER TABLE j ADD PRIMARY KEY (Hora_group , dep)");
-
-      $this->db->query("DROP TEMPORARY TABLE IF EXISTS x1");
-      $this->db->query("CREATE TEMPORARY TABLE x1 SELECT 
-          Hora_group,
-          dep,
-          COUNT(DISTINCT b.asesor) AS prog_x1
-      FROM
-          HoraGroup_Table a
-              LEFT JOIN
-          asesores_programacion b ON x1s <= CASTDATETIME(@inicio,Hora_end)
-              AND x1e > CASTDATETIME(@inicio,Hora_time)
-              LEFT JOIN
-          dep_asesores dp ON b.asesor = dp.asesor
-          AND @inicio = dp.Fecha 
-              LEFT JOIN 
-          asesores_ausentismos au ON b.asesor=au.asesor AND CAST(x1s as DATE)=au.Fecha 
-              LEFT JOIN config_tiposAusentismos tp ON au.ausentismo=tp.id
-      WHERE
-          x1s BETWEEN ADDDATE(@inicio,-1) AND ADDDATE(@inicio,1) AND dep!=29 AND vacante IS NOT NULL AND x1s!=x1e AND x1s IS NOT NULL
-          AND (COALESCE(au.a,0) = 0 OR tp.programable=0)
-          AND dp.dep=@skill AND puesto != 11
-      GROUP BY Hora_group , dep");
-      $this->db->query("ALTER TABLE x1 ADD PRIMARY KEY (Hora_group , dep)");
-
-      $this->db->query("DROP TEMPORARY TABLE IF EXISTS x2");
-      $this->db->query("CREATE TEMPORARY TABLE x2 SELECT 
-          Hora_group,
-          dep,
-          COUNT(DISTINCT b.asesor) AS prog_x2
-      FROM
-          HoraGroup_Table a
-              LEFT JOIN
-          asesores_programacion b ON x2s <= CASTDATETIME(@inicio,Hora_end)
-              AND x2e > CASTDATETIME(@inicio,Hora_time)
-              LEFT JOIN
-          dep_asesores dp ON b.asesor = dp.asesor
-          AND @inicio = dp.Fecha 
-              LEFT JOIN 
-          asesores_ausentismos au ON b.asesor=au.asesor AND CAST(x2s as DATE)=au.Fecha 
-              LEFT JOIN config_tiposAusentismos tp ON au.ausentismo=tp.id
-      WHERE
-          x2s BETWEEN ADDDATE(@inicio,-1) AND ADDDATE(@inicio,1) AND dep!=29 AND vacante IS NOT NULL AND x2s!=x2e AND x2s IS NOT NULL
-          AND (COALESCE(au.a,0) = 0 OR tp.programable=0)
-          AND dp.dep=@skill AND puesto != 11
-      GROUP BY Hora_group , dep");
-      $this->db->query("ALTER TABLE x2 ADD PRIMARY KEY (Hora_group , dep)");
+                            Hora_group,
+                            dep,
+                            COUNT(DISTINCT CASE
+                                    WHEN
+                                        js <= CASTDATETIME(@inicio, CASTDATETIME(@inicio, Hora_end))
+                                            AND je > CASTDATETIME(@inicio, Hora_time)
+                                    THEN
+                                        b.asesor
+                                END) AS prog_normal,
+                            COUNT(DISTINCT CASE
+                                    WHEN
+                                        x1s <= CASTDATETIME(@inicio, CASTDATETIME(@inicio, Hora_end))
+                                            AND x1e > CASTDATETIME(@inicio, Hora_time)
+                                    THEN
+                                        b.asesor
+                                END) AS prog_x1,
+                            COUNT(DISTINCT CASE
+                                    WHEN
+                                        x2s <= CASTDATETIME(@inicio, CASTDATETIME(@inicio, Hora_end))
+                                            AND x2e > CASTDATETIME(@inicio, Hora_time)
+                                    THEN
+                                        b.asesor
+                                END) AS prog_x2
+                        FROM
+                            HoraGroup_Table a
+                                JOIN
+                            (SELECT 
+                                dp.Fecha, dp.asesor, dp.dep, js, je, x1s, x1e, x2s, x2e
+                            FROM
+                                dep_asesores dp
+                            LEFT JOIN asesores_programacion p ON dp.asesor = p.asesor
+                                AND dp.Fecha = p.Fecha
+                            LEFT JOIN asesores_ausentismos au ON dp.asesor = au.asesor
+                                AND CAST(js AS DATE) = au.Fecha
+                            LEFT JOIN config_tiposAusentismos tp ON au.ausentismo = tp.id
+                            WHERE
+                                dp.dep = @skill AND dp.puesto != 11
+                                    AND p.Fecha BETWEEN ADDDATE(@inicio, - 1) AND ADDDATE(@inicio, 1)
+                                    AND COALESCE(js, 0) != je
+                                    AND (COALESCE(au.a, 0) = 0
+                                    OR tp.programable = 0)) b
+                        GROUP BY Hora_group;");
+      $this->db->query("ALTER TABLE j ADD PRIMARY KEY (Hora_group)");
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS prog");
       $this->db->query("CREATE TEMPORARY TABLE prog SELECT 
-          j.Hora_group,
-          j.dep,
+          Hora_group,
           prog_normal AS j, 
           COALESCE(prog_x1, 0) + COALESCE(prog_x2, 0) AS x
       FROM
-          j
-              LEFT JOIN
-          x1 ON j.Hora_group = x1.Hora_group
-              AND j.dep = x1.dep
-              LEFT JOIN
-          x2 ON j.Hora_group = x2.Hora_group
-              AND j.dep = x2.dep");
-      $this->db->query("ALTER TABLE prog ADD PRIMARY KEY (Hora_group , dep)");
+          j");
+      $this->db->query("ALTER TABLE prog ADD PRIMARY KEY (Hora_group)");
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS asist");
       $this->db->query("CREATE TEMPORARY TABLE asist SELECT 
@@ -190,22 +141,23 @@ class Bitacoras extends REST_Controller {
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS racs");
       $this->db->query("CREATE TEMPORARY TABLE racs SELECT
-          a.Hora_group, Hora_time,
-          pr.id as skill,
-          COALESCE(j,0) as programados, COALESCE(x,0) as extra_programados,
-          COALESCE(j,0)+COALESCE(x,0) as total_programados,
-          COUNT(IF(dp.dep = skill, b.asesor, NULL)) AS racsDep,
-          COUNT(DISTINCT b.asesor) AS racs
-      FROM
-          HoraGroup_Table a
-              JOIN
-              PCRCs pr LEFT JOIN 
-          asist b ON a.Hora_group=b.Hora_group AND pr.id = b.Skill
-              LEFT JOIN
-          dep_asesores dp ON b.asesor = dp.asesor
-              AND @inicio = dp.Fecha LEFT JOIN prog p ON a.Hora_group = p.Hora_group AND pr.id=p.dep
-      WHERE pr.parent=1
-      GROUP BY a.Hora_group , pr.id");
+            a.Hora_group, Hora_time,
+            IF(pr.id=@skill, @skill,-1000) as skill,
+            IF(pr.id=@skill, @skill,-1000) as skillOK,
+            COALESCE(j,0) as programados, COALESCE(x,0) as extra_programados,
+            COALESCE(j,0)+COALESCE(x,0) as total_programados,
+            COUNT(DISTINCT CASE WHEN dp.dep = skill THEN b.asesor END) AS racsDep,
+            COUNT(DISTINCT b.asesor) AS racs
+        FROM
+            HoraGroup_Table a
+                JOIN
+                PCRCs pr LEFT JOIN 
+            asist b ON a.Hora_group=b.Hora_group AND pr.id = b.Skill
+                LEFT JOIN
+            dep_asesores dp ON b.asesor = dp.asesor
+                AND @inicio = dp.Fecha LEFT JOIN prog p ON a.Hora_group = p.Hora_group AND IF(pr.id=@skill, @skill,-1000)=@skill
+        WHERE pr.parent=1
+        GROUP BY a.Hora_group , skillOK");
       $this->db->query("ALTER TABLE racs ADD PRIMARY KEY (Skill, Hora_group)");
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS bitacora");
@@ -295,6 +247,7 @@ class Bitacoras extends REST_Controller {
                 WHERE
                     r.Skill != 0
                 GROUP BY Hora_group , r.Skill
+                HAVING r.Skill=@skill
                 ORDER BY r.Skill , Hora_group";
 
       if( $result = $this->db->query($query) ){

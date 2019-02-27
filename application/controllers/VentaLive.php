@@ -9,9 +9,11 @@ class VentaLive extends REST_Controller {
   public function __construct(){
 
     parent::__construct();
-    $this->load->helper('json_utilities');
-    $this->load->helper('jwt');
-    $this->load->database();
+        $this->load->helper('json_utilities');
+        $this->load->helper('base_venta');
+        $this->load->helper('validators');
+        $this->load->helper('jwt');
+        $this->load->database();
   }
 
   public function liveData_get(){
@@ -305,6 +307,7 @@ class VentaLive extends REST_Controller {
 
 
   }
+
 
 }
 //

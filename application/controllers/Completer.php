@@ -116,7 +116,7 @@ class Completer extends REST_Controller {
       
       $this->codigosName();
       
-      $this->db->select("affiliateSiteId as idAffiliate, shortName, CONCAT(description,' ',IF(COALESCE(languageId,1)=1,'ESP ','ENG ')) as description, CONCAT(shortName, ' (',campaignName,')') as displayName, cp.isActive", FALSE)
+      $this->db->select("affiliateSiteId as idAffiliate, shortName, CONCAT(description,' ',CASE WHEN COALESCE(languageId,1)=1 THEN 'ENG ' WHEN COALESCE(languageId,1)=2 THEN 'ESP ' WHEN COALESCE(languageId,1)=5 THEN 'AGE ' ELSE 'UKN ' END) as description, CONCAT(shortName, ' (',campaignName,')') as displayName, cp.isActive", FALSE)
           ->select("REPLACE( REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(CONCAT(shortName, ' (',campaignName,') ',IFNULL(didPrefix,''))),'ñ','n'),'ú','u'),'ó','o'),'í','i'),'é','e'),'á','a') as searchTerm")
           ->from('cat_campaignCC cp')
           ->join('cat_didCC dd','cp.id = dd.campaignId','left')

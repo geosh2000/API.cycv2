@@ -232,22 +232,34 @@ class Lists extends REST_Controller {
 
             $pais = $this->uri->segment(3);
             $calls = $this->uri->segment(4);
+            $venta = $this->uri->segment(5);
+            $filter = 'no';
             
+
             $this->db->from('PCRCs')
                     ->order_by('Departamento');
             
-            if( isset($pais) && $pais != 0 ){ 
-                $this->db->where('sede', $pais);
+            if( isset($pais) ){ 
+                if( $pais != '0'){
+                    $filter = 'si';
+                    $this->db->where('sede', $pais);
+                }
+            }
+            
+            if( isset($venta) ){ 
+                $this->db->where('isVenta', $venta);
             }
 
             if( isset($calls) ){ 
-                $this->db->where('inbound_calls', $calls);
+                if( $calls != '100'){
+                    $this->db->where('inbound_calls', $calls);
+                }
             }
                     
             
             if( $q = $this->db->get() ){
                 
-                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this);
+                okResponse( 'Info Obtenida', 'data', $q->result_array(), $this, 'meta', array($filter, $pais, $calls));
                 
             }else{
                 errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
