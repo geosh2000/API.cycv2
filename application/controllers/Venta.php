@@ -1340,7 +1340,7 @@ class Venta extends REST_Controller {
                                     ventaPdv vp ON a.branchid = vp.branchid
                                         AND f.Fecha = vp.Fecha LEFT JOIN metas_pdv mp ON mp.mes=MONTH(@inicio) AND mp.anio=YEAR(@inicio) AND mp.pdv=a.id
                                 WHERE
-                                    Activo = 1 AND pais = 'MX' AND f.Fecha BETWEEN @inicio AND @fin
+                                    (Activo = 1 OR (Activo=0 AND meta_total IS NOT NULL)) AND pais = 'MX' AND f.Fecha BETWEEN @inicio AND @fin
                                 GROUP BY a.PDV");
             
             $zoneQ = "SELECT 
@@ -1383,38 +1383,87 @@ class Venta extends REST_Controller {
                             byPDV
                         GROUP BY PDV";
 
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProg");
+            $this->db->query("CREATE TEMPORARY TABLE pdvProg
+            SELECT ap.*, programable, oficina FROM asesores_programacion ap 
+                    LEFT JOIN
+                dep_asesores dp ON ap.asesor = dp.asesor
+                    AND ap.Fecha = dp.Fecha
+                    AND vacante IS NOT NULL
+                    LEFT JOIN
+                asesores_ausentismos au ON ap.asesor = au.asesor
+                    AND ap.Fecha = au.Fecha
+                    LEFT JOIN
+                config_tiposAusentismos cta ON au.ausentismo = cta.id
+            WHERE
+                ap.Fecha BETWEEN @inicio AND @fin AND vacante IS NOT NULL");
+            $this->db->query("ALTER TABLE pdvProg ADD PRIMARY KEY (Fecha, asesor)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasPorAsesor");
+            $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
+            SELECT 
+                ppr.Fecha,
+                PdvId,
+                meta_total_diaria / IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                            AND COALESCE(programable, 0) != 1,
+                        ppr.asesor,
+                        NULL)) > metasAsesores,
+                    metasAsesores,
+                    COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                            AND COALESCE(programable, 0) != 1,
+                        ppr.asesor,
+                        NULL))) AS meta_total_diaria,
+                meta_hotel_diaria / IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                            AND COALESCE(programable, 0) != 1,
+                        ppr.asesor,
+                        NULL)) > metasAsesores,
+                    metasAsesores,
+                    COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                            AND COALESCE(programable, 0) != 1,
+                        ppr.asesor,
+                        NULL))) AS meta_hotel_diaria,
+                metasAsesores,
+                COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                        AND COALESCE(programable, 0) != 1,
+                    ppr.asesor,
+                    NULL)) AS programados
+            FROM
+                byPDV p
+                    LEFT JOIN
+                pdvProg ppr ON PdvId = COALESCE(ppr.pdv, oficina)
+            GROUP BY ppr.Fecha , PdvId
+            HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
+            $this->db->query("ALTER TABLE metasPorAsesor ADD PRIMARY KEY (Fecha, PdvId)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS dailyPdv");
             $this->db->query("CREATE TEMPORARY TABLE dailyPdv SELECT 
-                                    dp.Fecha,
-                                    NOMBREASESOR(dp.asesor, 2) AS Nombre,
-                                    NOMBREPUESTO(dp.puesto) as Puesto,
-                                    FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
-                                    COALESCE(ap.pdv, dp.oficina) AS pdvId,
-                                    SUM(COALESCE(Monto, 0)) AS Monto,
-                                    SUM(IF(Servicio = 'Hotel',
-                                        COALESCE(Monto, 0),
-                                        0)) AS MontoHotel,
-                                    IF(COALESCE(js,1)=COALESCE(je,0) AND COALESCE(au.a,0)!=1,0,COALESCE(meta_total_diaria/mp.asesores,0)) as metaTotal,
-                                    IF(COALESCE(js,1)=COALESCE(je,0) AND COALESCE(au.a,0)!=1,0,COALESCE(meta_hotel_diaria/mp.asesores,0)) as metaHotel
-                                FROM
-                                    dep_asesores dp
-                                        LEFT JOIN
-                                    asesores_programacion ap ON dp.asesor = ap.asesor
-                                        AND dp.Fecha = ap.Fecha
-                                        LEFT JOIN
-                                    ventaPdv v ON dp.asesor = v.asesor
-                                        AND dp.Fecha = v.Fecha
-                                        LEFT JOIN
-                                    metas_pdv mp ON COALESCE(ap.pdv, dp.oficina) = mp.pdv
-                                        AND MONTH(@inicio) = mp.mes
-                                        AND YEAR(@inicio) = mp.anio
-                                        LEFT JOIN 
-                                    asesores_ausentismos au ON dp.asesor=au.asesor AND dp.Fecha=au.Fecha AND au.a=1
-                                WHERE
-                                    dp.puesto NOT IN (11 , 17, 48)
-                                        AND dp.Fecha BETWEEN @inicio AND @fin
-                                        AND dp.dep = 29
-                                        AND dp.vacante IS NOT NULL
-                                GROUP BY dp.Fecha , dp.asesor");
+                                dp.Fecha,
+                                NOMBREASESOR(dp.asesor, 2) AS Nombre,
+                                NOMBREPUESTO(dp.puesto) as Puesto,
+                                FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
+                                COALESCE(ap.pdv, dp.oficina) AS pdvId,
+                                SUM(COALESCE(Monto, 0)) AS Monto,
+                                SUM(IF(Servicio = 'Hotel',
+                                    COALESCE(Monto, 0),
+                                    0)) AS MontoHotel,
+                                COALESCE(meta_total_diaria,0) as metaTotal,
+                                COALESCE(meta_hotel_diaria,0) as metaHotel
+                            FROM
+                                dep_asesores dp
+                                    LEFT JOIN
+                                asesores_programacion ap ON dp.asesor = ap.asesor
+                                    AND dp.Fecha = ap.Fecha
+                                    LEFT JOIN
+                                ventaPdv v ON dp.asesor = v.asesor
+                                    AND dp.Fecha = v.Fecha
+                                    LEFT JOIN
+                                metasPorAsesor mp ON dp.Fecha=mp.Fecha AND COALESCE(ap.pdv, dp.oficina) = mp.PdvId
+                            WHERE
+                                dp.puesto NOT IN (11 , 17, 48)
+                                    AND dp.Fecha BETWEEN @inicio AND @fin
+                                    AND dp.dep = 29
+                                    AND dp.vacante IS NOT NULL
+                            GROUP BY dp.Fecha , dp.asesor");
 
             $dailyQ = "SELECT * FROM dailyPdv";
             $sumAllQ = "SELECT * FROM byPDV";
@@ -1634,6 +1683,87 @@ class Venta extends REST_Controller {
                 asesor_calls c ON a.asesor = c.asesor
                     AND a.Fecha = c.Fecha
                     AND a.Hora_group = c.Hora_group";
+
+            if( $q = $this->db->query( $query ) ){
+                
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this);
+
+            }
+
+            errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            
+
+        });
+
+    }
+
+    public function baseSumCall_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $inicio = $this->uri->segment(3);
+            
+            $this->db->query("SET @inicio = '$inicio'");
+            $this->db->query("SET @fin = ADDDATE(@inicio,1)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS callsOut");
+            $this->db->query("CREATE TEMPORARY TABLE callsOut SELECT 
+                                a.*,
+                                Skill,
+                                direction,
+                                SUBSTRING(Llamante,
+                                    LENGTH(Llamante) - 7,
+                                    7) AS callCompare
+                            FROM
+                                t_Answered_Calls a
+                                    LEFT JOIN
+                                Cola_Skill b ON a.qNumber = b.queue
+                            WHERE
+                                Fecha = @inicio AND Skill = 5
+                                    AND direction = 2");
+                            
+            $query = "SELECT 
+                                CAST(dtCreated AS DATE) AS Fecha,
+                                CAST(dtCreated AS TIME) AS Hora,
+                                Localizador,
+                                gpoCanalKpi,
+                                tipoCanal,
+                                nombreCliente,
+                                correo,
+                                Servicios,
+                                COUNT(IF(Duracion < '00:00:50' OR Answered = 0,
+                                    ac_id,
+                                    NULL)) AS Intentos,
+                                COUNT(IF(Duracion >= '00:00:50' AND Answered = 1,
+                                    ac_id,
+                                    NULL)) AS Efectivas,
+                                GROUP_CONCAT(DISTINCT NOMBREASESOR(asesor, 2)) AS asesores,
+                                MIN(c.Hora) AS primerIntento,
+                                MAX(c.Hora) AS ultimoIntento
+                            FROM
+                                t_base_ob a
+                                    LEFT JOIN
+                                chanGroups gp ON a.chanId = gp.id
+                                    LEFT JOIN
+                                callsOut c ON SUBSTRING(a.telFijo,
+                                        LENGTH(a.telFijo) - 7,
+                                        7) = callCompare OR SUBSTRING(a.telMobile,
+                                        LENGTH(a.telMobile) - 7,
+                                        7) = callCompare
+                            WHERE
+                                -- dtCreated BETWEEN @inicio AND @fin 
+                                    dtCreated>=CURDATE()
+                                    AND pais = 'MX'
+                                    AND (isQuote = 1
+                                    OR (isQuote = 0 AND obStatus != 0))
+                                    AND tipoCanal NOT LIKE '%Offline%'
+                                    AND tipoCanal NOT LIKE '%pdv%'
+                                    AND marca = 'Marcas Propias'
+                                    AND (LENGTH(a.telFijo) >= 7
+                                    OR LENGTH(a.telMobile) >= 7)
+                                    AND (Servicios LIKE '%Hotel%'
+                                    OR Servicios LIKE '%Vuelo%')
+                            GROUP BY Localizador";
 
             if( $q = $this->db->query( $query ) ){
                 
