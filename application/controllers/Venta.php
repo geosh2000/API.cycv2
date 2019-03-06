@@ -440,7 +440,7 @@ class Venta extends REST_Controller {
             if($query = $this->db->get_compiled_select()){
 
                 if($asesor == 1){
-                    $this->db->select("a.Fecha, asesor, NOMBREASESOR(asesor,2) as Nombre, TRIM(m.Ciudad) as Ciudad, FINDSUPERDAYPDV(a.Fecha, b.oficina, 1) as Supervisor", FALSE)
+                    $this->db->select("a.Fecha, asesor, NOMBREASESOR(asesor,2) as Nombre, TRIM(m.Ciudad) as Ciudad, FINDSUPERDAYPDV(a.Fecha, b.oficina, 1) as Supervisor, NOMBREPDV(b.Oficina,1) as PdvName", FALSE)
                             ->from("Fechas a")
                             ->join("dep_asesores b", "a.Fecha=b.Fecha", "left")
                             ->join("asesores_plazas p", "b.vacante=p.id", "left")
@@ -1317,6 +1317,8 @@ class Venta extends REST_Controller {
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS byPDV");
             $this->db->query("CREATE TEMPORARY TABLE byPDV
                                 SELECT 
+                                    a.id as PdvId,
+                                    mp.asesores as metasAsesores,
                                     a.PDV,
                                     displayNameShort,
                                     zc.nombreZona AS Zona,
@@ -1404,24 +1406,14 @@ class Venta extends REST_Controller {
             SELECT 
                 ppr.Fecha,
                 PdvId,
-                meta_total_diaria / IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                meta_total_diaria / metasAsesores + IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
                             AND COALESCE(programable, 0) != 1,
                         ppr.asesor,
-                        NULL)) > metasAsesores,
-                    metasAsesores,
-                    COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                        NULL)) < metasAsesores, meta_total_diaria / metasAsesores * .5,0) AS meta_total_diaria,
+                meta_hotel_diaria / metasAsesores + IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
                             AND COALESCE(programable, 0) != 1,
                         ppr.asesor,
-                        NULL))) AS meta_total_diaria,
-                meta_hotel_diaria / IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                            AND COALESCE(programable, 0) != 1,
-                        ppr.asesor,
-                        NULL)) > metasAsesores,
-                    metasAsesores,
-                    COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                            AND COALESCE(programable, 0) != 1,
-                        ppr.asesor,
-                        NULL))) AS meta_hotel_diaria,
+                        NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * .5,0) AS meta_hotel_diaria,
                 metasAsesores,
                 COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
                         AND COALESCE(programable, 0) != 1,
@@ -1446,13 +1438,24 @@ class Venta extends REST_Controller {
                                 SUM(IF(Servicio = 'Hotel',
                                     COALESCE(Monto, 0),
                                     0)) AS MontoHotel,
-                                COALESCE(meta_total_diaria,0) as metaTotal,
-                                COALESCE(meta_hotel_diaria,0) as metaHotel
+                                COALESCE(IF(COALESCE(js,0) != COALESCE(je,1) AND COALESCE(programable,0) != 1,
+                                            meta_total_diaria,
+                                            0),
+                                        0) AS metaTotal,
+                                COALESCE(IF(COALESCE(js,0) != COALESCE(je,1) AND COALESCE(programable,0) != 1,
+                                            meta_hotel_diaria,
+                                            0),
+                                        0) AS metaHotel
                             FROM
                                 dep_asesores dp
                                     LEFT JOIN
                                 asesores_programacion ap ON dp.asesor = ap.asesor
                                     AND dp.Fecha = ap.Fecha
+                                    LEFT JOIN
+                                asesores_ausentismos au ON ap.asesor = au.asesor
+                                    AND ap.Fecha = au.Fecha
+                                    LEFT JOIN
+                                config_tiposAusentismos cta ON au.ausentismo = cta.id
                                     LEFT JOIN
                                 ventaPdv v ON dp.asesor = v.asesor
                                     AND dp.Fecha = v.Fecha
@@ -1712,7 +1715,7 @@ class Venta extends REST_Controller {
                                 Skill,
                                 direction,
                                 SUBSTRING(Llamante,
-                                    LENGTH(Llamante) - 7,
+                                    LENGTH(Llamante) - 6,
                                     7) AS callCompare
                             FROM
                                 t_Answered_Calls a
@@ -1723,47 +1726,53 @@ class Venta extends REST_Controller {
                                     AND direction = 2");
                             
             $query = "SELECT 
-                                CAST(dtCreated AS DATE) AS Fecha,
-                                CAST(dtCreated AS TIME) AS Hora,
-                                Localizador,
-                                gpoCanalKpi,
-                                tipoCanal,
-                                nombreCliente,
-                                correo,
-                                Servicios,
-                                COUNT(IF(Duracion < '00:00:50' OR Answered = 0,
-                                    ac_id,
-                                    NULL)) AS Intentos,
-                                COUNT(IF(Duracion >= '00:00:50' AND Answered = 1,
-                                    ac_id,
-                                    NULL)) AS Efectivas,
-                                GROUP_CONCAT(DISTINCT NOMBREASESOR(asesor, 2)) AS asesores,
-                                MIN(c.Hora) AS primerIntento,
-                                MAX(c.Hora) AS ultimoIntento
-                            FROM
-                                t_base_ob a
-                                    LEFT JOIN
-                                chanGroups gp ON a.chanId = gp.id
-                                    LEFT JOIN
-                                callsOut c ON SUBSTRING(a.telFijo,
-                                        LENGTH(a.telFijo) - 7,
-                                        7) = callCompare OR SUBSTRING(a.telMobile,
-                                        LENGTH(a.telMobile) - 7,
-                                        7) = callCompare
-                            WHERE
-                                -- dtCreated BETWEEN @inicio AND @fin 
-                                    dtCreated>=CURDATE()
-                                    AND pais = 'MX'
-                                    AND (isQuote = 1
-                                    OR (isQuote = 0 AND obStatus != 0))
-                                    AND tipoCanal NOT LIKE '%Offline%'
-                                    AND tipoCanal NOT LIKE '%pdv%'
-                                    AND marca = 'Marcas Propias'
-                                    AND (LENGTH(a.telFijo) >= 7
-                                    OR LENGTH(a.telMobile) >= 7)
-                                    AND (Servicios LIKE '%Hotel%'
-                                    OR Servicios LIKE '%Vuelo%')
-                            GROUP BY Localizador";
+                        CAST(a.dtCreated AS DATE) AS Fecha,
+                        CAST(a.dtCreated AS TIME) AS Hora,
+                        Localizador,
+                        gpoCanalKpi,
+                        tipoCanal,
+                        ob.name,
+                        nombreCliente,
+                        correo,
+                        Servicios,
+                        COUNT(IF(Duracion < '00:00:50' OR Answered = 0,
+                            ac_id,
+                            NULL)) AS Intentos,
+                        COUNT(IF(Duracion >= '00:00:50' AND Answered = 1,
+                            ac_id,
+                            NULL)) AS Efectivas,
+                        GROUP_CONCAT(DISTINCT NOMBREASESOR(c.asesor, 1)) AS asesores,
+                        MIN(c.Hora) AS primerIntento,
+                        MAX(c.Hora) AS ultimoIntento,
+                        NOMBREASESOR(ml.asesor,1) as Concretada
+                    FROM
+                        t_base_ob a LEFT JOIN config_obStatus ob ON a.obStatus=ob.id
+                            LEFT JOIN
+                        chanGroups gp ON a.chanId = gp.id
+                        LEFT JOIN t_masterlocators ml ON a.Localizador=ml.masterlocatorid
+                            LEFT JOIN
+                        callsOut c ON SUBSTRING(a.telFijo,
+                                LENGTH(a.telFijo) - 6,
+                                7) = callCompare OR SUBSTRING(a.telMobile,
+                                LENGTH(a.telMobile) - 6,
+                                7) = callCompare
+                    WHERE
+                            a.dtCreated BETWEEN @inicio AND @fin 
+                            -- a.dtCreated>=CURDATE()
+                            AND pais = 'MX'
+                            AND (isQuote = 1
+                            OR (isQuote = 0 AND ml.asesor>=0))
+                            AND tipoCanal NOT LIKE '%Offline%'
+                            AND tipoCanal NOT LIKE '%pdv%'
+                            AND marca = 'Marcas Propias'
+                            AND (LENGTH(a.telFijo) >= 7
+                            OR LENGTH(a.telMobile) >= 7)
+                            AND (Servicios LIKE '%Hotel%'
+                            OR Servicios LIKE '%Vuelo%')
+                            AND correo NOT LIKE '%pricetra%'
+                            AND nombreCliente NOT LIKE'%test%'
+                    GROUP BY Localizador";
+
 
             if( $q = $this->db->query( $query ) ){
                 
