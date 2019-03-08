@@ -270,7 +270,7 @@ class Asistencia extends REST_Controller {
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS log_asesor");
       $this->db->query("CREATE TEMPORARY TABLE log_asesor (SELECT
-          a.*,
+          a.*, NOMBREPDV(b.pdv,3) as pdvAssign,
       	b.id as h_id,
           js, je, x1s, x1e, x2s, x2e, cs, ce, phx,
           checkLog(a.Fecha, a.asesor, 'in') AS login,
@@ -489,7 +489,7 @@ public function pyaV2_get(){
 
       $this->db->query("DROP TEMPORARY TABLE IF EXISTS log_asesor");
       $this->db->query("CREATE TEMPORARY TABLE log_asesor (SELECT
-          a.*,
+          a.*, NOMBREPDV(b.pdv,3) as pdvAssign,
       	b.id as h_id,
           js, je, x1s, x1e, x2s, x2e, cs, ce, phx,
           checkLog(a.Fecha, a.asesor, 'in') AS login,

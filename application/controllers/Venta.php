@@ -1722,18 +1722,37 @@ class Venta extends REST_Controller {
                                     LEFT JOIN
                                 Cola_Skill b ON a.qNumber = b.queue
                             WHERE
-                                Fecha = @inicio AND Skill = 5
+                                Fecha = @inicio 
+                            HAVING Skill IN (35,5,29)
                                     AND direction = 2");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsConc");
+            $this->db->query("CREATE TEMPORARY TABLE locsConc
+                            SELECT 
+                                a.Localizador,
+                                COUNT(DISTINCT masterlocatorid) AS Saldado,
+                                GROUP_CONCAT(DISTINCT masterlocatorid) AS LocsConcretados,
+                                GROUP_CONCAT(DISTINCT NOMBREASESOR(b.asesor,1)) AS AsesoresCierre
+                            FROM
+                                t_base_ob a
+                                    LEFT JOIN
+                                t_masterlocators b ON CAST(a.dtCreated AS DATE) = CAST(b.dtCreated AS DATE)
+                                    AND a.correo = b.correo
+                            WHERE
+                                CAST(a.dtCreated AS DATE) = @inicio
+                                    AND b.asesor >= 0
+                            GROUP BY a.Localizador");
+            $this->db->query("ALTER TABLE locsConc ADD PRIMARY KEY (Localizador)");
                             
             $query = "SELECT 
                         CAST(a.dtCreated AS DATE) AS Fecha,
                         CAST(a.dtCreated AS TIME) AS Hora,
-                        Localizador,
+                        a.Localizador,
                         gpoCanalKpi,
                         tipoCanal,
                         ob.name,
                         nombreCliente,
-                        correo,
+                        a.correo,
                         Servicios,
                         COUNT(IF(Duracion < '00:00:50' OR Answered = 0,
                             ac_id,
@@ -1744,12 +1763,16 @@ class Venta extends REST_Controller {
                         GROUP_CONCAT(DISTINCT NOMBREASESOR(c.asesor, 1)) AS asesores,
                         MIN(c.Hora) AS primerIntento,
                         MAX(c.Hora) AS ultimoIntento,
-                        NOMBREASESOR(ml.asesor,1) as Concretada
+                        asesoresCierre as Concretada,
+                        LocsConcretados as LocsSaldados
                     FROM
                         t_base_ob a LEFT JOIN config_obStatus ob ON a.obStatus=ob.id
                             LEFT JOIN
                         chanGroups gp ON a.chanId = gp.id
-                        LEFT JOIN t_masterlocators ml ON a.Localizador=ml.masterlocatorid
+                            LEFT JOIN
+                        locsConc lc ON a.Localizador = lc.Localizador
+                            LEFT JOIN 
+                        t_masterlocators ml ON a.Localizador=ml.masterlocatorid
                             LEFT JOIN
                         callsOut c ON SUBSTRING(a.telFijo,
                                 LENGTH(a.telFijo) - 6,
@@ -1769,9 +1792,48 @@ class Venta extends REST_Controller {
                             OR LENGTH(a.telMobile) >= 7)
                             AND (Servicios LIKE '%Hotel%'
                             OR Servicios LIKE '%Vuelo%')
-                            AND correo NOT LIKE '%pricetra%'
+                            AND a.correo NOT LIKE '%pricetra%'
                             AND nombreCliente NOT LIKE'%test%'
-                    GROUP BY Localizador";
+                    GROUP BY a.Localizador";
+
+
+            if( $q = $this->db->query( $query ) ){
+                
+                okResponse('Data Obtenida', 'data', $q->result_array(), $this);
+
+            }
+
+            errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+            
+
+        });
+
+    }
+
+    public function fcPdvPorAsesor_get(){
+
+        $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
+
+            $inicio = $this->uri->segment(3);
+            
+            $this->db->query("SET @inicio = '$inicio'");
+                           
+            $query = "SELECT 
+                        a.Fecha,
+                        NOMBREASESOR(a.asesor, 2) AS Nombre,
+                        NOMBREPDV(oficina, 2) AS PDV,
+                        callsIn AS Llamadas,
+                        LocsIn,
+                        LocsIn / callsIn AS FC
+                    FROM
+                        graf_dailySale a
+                            LEFT JOIN
+                        dep_asesores dp ON a.asesor = dp.asesor
+                            AND a.Fecha = dp.Fecha
+                    WHERE
+                        a.Fecha = @inicio AND a.dep = 29
+                            AND callsIn > 0
+                            AND vacante IS NOT NULL";
 
 
             if( $q = $this->db->query( $query ) ){

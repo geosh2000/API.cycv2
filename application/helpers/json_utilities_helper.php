@@ -35,15 +35,21 @@ function onDuplicateUpdate( $class, $params, $table ){
 
 }
 
-function validateToken( $token_uri, $usn, $function ){
+function validateToken( $token_uri, $usn, $function, $class=null ){
 
   $token = JWT::validateToken( $token_uri, $usn, 'cAlbertyCome' );
 
   if( !$token['status'] ){
-      $result = array(
-                    "status"    => false,
-                    "msg"       => $token['msg']
-                  );
+    if( $class != null ){
+      errResponse($token['msg'], REST_Controller::HTTP_BAD_REQUEST, $class);
+    }
+
+    $result = array(
+                  "status"    => false,
+                  "msg"       => $token['msg']
+                );
+    echo $token['msg'];
+    
   }else{
 
      $result = $function();

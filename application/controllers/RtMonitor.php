@@ -168,7 +168,7 @@ class RtMonitor extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 

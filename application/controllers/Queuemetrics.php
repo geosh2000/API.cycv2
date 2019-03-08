@@ -36,7 +36,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -84,7 +84,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -114,7 +114,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -144,7 +144,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -177,7 +177,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -214,7 +214,7 @@ class Queuemetrics extends REST_Controller {
 
       return true;
 
-    });
+    },$this);
 
     $this->response( $result );
 
@@ -258,56 +258,59 @@ class Queuemetrics extends REST_Controller {
 
   public function rtCallsCO_get(){
 
-    $pais = $this->uri->segment(3);
+    $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
 
-    $query = "SELECT 
-                        COALESCE(descr_agente, a.Agent) AS agente,
-                        NOMBREDEP(dep) AS Dep,
-                        SUBSTR(Agent, 7, 100) AS Extension,
-                        RT_caller AS caller,
-                        COALESCE(q.shortName,RT_queue) as Q,
-                        RT_queue as waitQ,
-                        direction,
-                        b.Pausa,
-                        CASE 
-                        WHEN RT_caller IS NOT NULL THEN 
-			                    IF(RT_answered = 0,RT_entered,RT_answered)
-                        WHEN Curpausecode != '' THEN 
-                          IF(Freesincepauorcalltst > Curpausetst, Freesincepauorcalltst, Curpausetst)
-                        ELSE IF(Freesincepauorcalltst != 0, Freesincepauorcalltst, Logon)
-                        END as lastTst,
-                        a.Queue,
-                        RT_entered as waiting,
-                        Curpausetst as origPauseTst,
-                        RT_answered as answeredTst,
-                        RT_dnis,
-                        obCaller,
-                        obTst,
-                        pr.color,
-                        a.Last_Update,
-                        IF(a.Freesincepauorcalltst = 0, Logon, Freesincepauorcalltst) as freeSince
-                    FROM
-                        ccexporter.liveMonitor$pais a
-                            LEFT JOIN
-                        ccexporter.agentDetails nm ON a.Agent = nome_agente
-                            LEFT JOIN
-                        Tipos_pausas b ON Curpausecode = b.pausa_id
-                            AND Curpausecode != ''
-                            LEFT JOIN
-                        dep_asesores dp ON nm.asesor = dp.asesor
-                            AND dp.Fecha = CURDATE()
-                            LEFT JOIN
-                        Cola_Skill q ON RT_queue = q.queue
-                            LEFT JOIN
-                        PCRCs pr ON dp.dep = pr.id
-                    ORDER BY RT_entered DESC";
-    
+        $pais = $this->uri->segment(3);
 
-    if( $rt = $this->db->query($query) ){
-      okResponse("'Info Obtenida", "data", $rt->result_array(), $this);
-    }else{
-      errResponse("Error en base de datos",REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
-    }
+        $query = "SELECT 
+                            COALESCE(descr_agente, a.Agent) AS agente,
+                            NOMBREDEP(dep) AS Dep,
+                            SUBSTR(Agent, 7, 100) AS Extension,
+                            RT_caller AS caller,
+                            COALESCE(q.shortName,RT_queue) as Q,
+                            RT_queue as waitQ,
+                            direction,
+                            b.Pausa,
+                            CASE 
+                            WHEN RT_caller IS NOT NULL THEN 
+                              IF(RT_answered = 0,RT_entered,RT_answered)
+                            WHEN Curpausecode != '' THEN 
+                              IF(Freesincepauorcalltst > Curpausetst, Freesincepauorcalltst, Curpausetst)
+                            ELSE IF(Freesincepauorcalltst != 0, Freesincepauorcalltst, Logon)
+                            END as lastTst,
+                            a.Queue,
+                            RT_entered as waiting,
+                            Curpausetst as origPauseTst,
+                            RT_answered as answeredTst,
+                            RT_dnis,
+                            obCaller,
+                            obTst,
+                            pr.color,
+                            a.Last_Update,
+                            IF(a.Freesincepauorcalltst = 0, Logon, Freesincepauorcalltst) as freeSince
+                        FROM
+                            ccexporter.liveMonitor$pais a
+                                LEFT JOIN
+                            ccexporter.agentDetails nm ON a.Agent = nome_agente
+                                LEFT JOIN
+                            Tipos_pausas b ON Curpausecode = b.pausa_id
+                                AND Curpausecode != ''
+                                LEFT JOIN
+                            dep_asesores dp ON nm.asesor = dp.asesor
+                                AND dp.Fecha = CURDATE()
+                                LEFT JOIN
+                            Cola_Skill q ON RT_queue = q.queue
+                                LEFT JOIN
+                            PCRCs pr ON dp.dep = pr.id
+                        ORDER BY RT_entered DESC";
+        
+
+        if( $rt = $this->db->query($query) ){
+          okResponse("'Info Obtenida", "data", $rt->result_array(), $this);
+        }else{
+          errResponse("Error en base de datos",REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+    },$this);
 
   }
 
@@ -517,7 +520,7 @@ class Queuemetrics extends REST_Controller {
       errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
     }
 
-    });
+    },$this);
 
   }
 
@@ -547,7 +550,7 @@ class Queuemetrics extends REST_Controller {
         errResponse('Error al compilar información', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
       }
 
-    });
+    },$this);
 
   }
 

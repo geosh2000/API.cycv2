@@ -289,10 +289,10 @@ class Mailing extends REST_Controller {
                                 FROM
                                     dep_asesores a
                                         LEFT JOIN
-                                    Asesores b ON a.asesor = b.id
+                                    Asesores b ON a.asesor = b.id LEFT JOIN PCRCs pr ON a.dep=pr.id
                                 WHERE
                                     Fecha = CURDATE()
-                                        AND vacante IS NOT NULL
+                                        AND vacante IS NOT NULL AND sede='mx'
                                 HAVING (MONTH(Fecha_Nacimiento) = MONTH(CURDATE())
                                     AND DAY(Fecha_Nacimiento) = DAY(CURDATE()))
                                     OR (MONTH(Fecha_Nacimiento) = MONTH(ADDDATE(CURDATE(), 1))
