@@ -363,16 +363,18 @@ class Mailing extends REST_Controller {
                                     0) AS today,
                                 sent
                             FROM
-                                dep_asesores a
+                                dep_asesores a 
+                                    LEFT JOIN
+                                PCRCs pr ON a.dep=pr.id
                                     LEFT JOIN
                                 Asesores b ON a.asesor = b.id
                                     LEFT JOIN
                                 mail_dailyCheck c ON b.Usuario = c.user
-                                    AND CURDATE() = c.Fecha
+                                    AND CURDATE() = c.Fecha 
                                     AND c.tipo = 'cumplePersonalizado'
                             WHERE
                                 a.Fecha = CURDATE()
-                                    AND vacante IS NOT NULL
+                                    AND vacante IS NOT NULL AND sede='mx'
                             HAVING MONTH(Fecha_Nacimiento) = MONTH(CURDATE())
                                 AND DAY(Fecha_Nacimiento) = DAY(CURDATE())
                                 AND COALESCE(sent, 0) = 0

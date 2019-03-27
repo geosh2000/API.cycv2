@@ -20,16 +20,20 @@ class Outlet extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $query = "SELECT 
-                    Fecha, Hora, COUNT(*) citas
+                    Fecha, Hora, tipo, COUNT(*) citas
                 FROM
                     comeycom_WFM.ovv_citas
-                GROUP BY Fecha , Hora";
+                GROUP BY Fecha , Hora, tipo";
         
       if( $q = $this->db->query( $query ) ){
           
           $result = array();
           foreach($q->result_array() as $index => $info){
-              $result[$info['Fecha']][$info['Hora']] = $info['citas'];
+              if( !isset($result[$info['Fecha']]) ){
+                  $result[$info['Fecha']] = array ("0" => array(), "1" => array());
+              }
+
+              $result[$info['Fecha']][$info['tipo']][$info['Hora']] = $info['citas'];
           }
           
         okResponse( 'Información Obtenida', 'data', $result, $this );
@@ -172,14 +176,14 @@ class Outlet extends REST_Controller {
 
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
-        $this->db->from('ovv_db a')->order_by('VentaMxn', 'DESC');
+        $this->db->from('ovv_db a')->where('base', 2018);
         
         $monitor = $this->uri->segment(3);
         
         if(isset($monitor) && $monitor == 1){
-            $this->db->select('id, a.status_changer, Contacto, Status, folio, NOMBREASESOR(a.status_changer,1) as ActualizadoPor, comments', FALSE);
+            $this->db->select('*, NOMBREASESOR(a.status_changer,1) as ActualizadoPor, UCWORDS(customerName) as clName', FALSE);
         }else{
-            $this->db->select('*, NOMBREASESOR(a.status_changer,1) as ActualizadoPor', FALSE);
+            $this->db->select('*, NOMBREASESOR(a.status_changer,1) as ActualizadoPor, UCWORDS(customerName) as clName', FALSE);
         }
     
         $this->db->where('Contacto <',2);
@@ -237,16 +241,25 @@ class Outlet extends REST_Controller {
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $data = $this->put();
+
+        $q = $this->db->query("SELECT customerEmail FROM ovv_db WHERE id=".$data['id']);
+        $qR = $q->row_array();
         
         $this->db->set( $data['field'], $data['val'] )
                 ->set( 'status_changer', $_GET['usid'])
-                ->where('id', $data['id']);
+                ->where('customerEmail', $qR['customerEmail']);
                 
         
         if( $data['field'] == 'Status' ){
-            $this->db->set( 'comments', $data['comments']);     
             if( $data['val'] == 1 ){
                 $this->db->set( 'folio', $data['folio']);
+            }
+            
+            if( $data['val'] == 0 ){
+                $this->db->set( 'folio', null);
+                $this->db->set( 'comments', null);
+            }else{
+                $this->db->set( 'comments', $data['comments']);     
             }
         }
         

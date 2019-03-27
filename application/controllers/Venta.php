@@ -1340,7 +1340,9 @@ class Venta extends REST_Controller {
                                     pdv_zonesCustom zc ON a.customZone = zc.id
                                         LEFT JOIN
                                     ventaPdv vp ON a.branchid = vp.branchid
-                                        AND f.Fecha = vp.Fecha LEFT JOIN metas_pdv mp ON mp.mes=MONTH(@inicio) AND mp.anio=YEAR(@inicio) AND mp.pdv=a.id
+                                        AND f.Fecha = vp.Fecha 
+                                        LEFT JOIN 
+                                    metas_pdv mp ON mp.mes=MONTH(@inicio) AND mp.anio=YEAR(@inicio) AND mp.pdv=a.id
                                 WHERE
                                     (Activo = 1 OR (Activo=0 AND meta_total IS NOT NULL)) AND pais = 'MX' AND f.Fecha BETWEEN @inicio AND @fin
                                 GROUP BY a.PDV");
@@ -1387,7 +1389,9 @@ class Venta extends REST_Controller {
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProg");
             $this->db->query("CREATE TEMPORARY TABLE pdvProg
-            SELECT ap.*, programable, oficina FROM asesores_programacion ap 
+            SELECT ap.*, programable, oficina, 
+             COALESCE(ap.pdv,dp.oficina) as ofOK -- 20190315 Ajustes en query para indexar oficina
+             FROM asesores_programacion ap 
                     LEFT JOIN
                 dep_asesores dp ON ap.asesor = dp.asesor
                     AND ap.Fecha = dp.Fecha
@@ -1401,19 +1405,46 @@ class Venta extends REST_Controller {
                 ap.Fecha BETWEEN @inicio AND @fin AND vacante IS NOT NULL");
             $this->db->query("ALTER TABLE pdvProg ADD PRIMARY KEY (Fecha, asesor)");
 
+            // 20190315 Ajustes en query para indexar oficina
+            $this->db->query("ALTER TABLE pdvProg ADD INDEX (ofOK ASC)");
+
+            // El siguiente bloque se puede comentar a partir del 1 de abril de 2019
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvVacantes");
+            $this->db->query("CREATE TEMPORARY TABLE pdvVacantes
+            SELECT 
+				Fecha, oficina, COUNT(*) as vacsCovrd
+			FROM
+				dep_asesores
+			WHERE
+				Fecha BETWEEN @inicio AND @fin
+					AND vacante IS NOT NULL
+					AND dep = 29
+			GROUP BY Fecha, oficina");
+            $this->db->query("ALTER TABLE pdvVacantes ADD PRIMARY KEY (Fecha, oficina)");
+
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasPorAsesor");
             $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
             SELECT 
                 ppr.Fecha,
                 PdvId,
-                meta_total_diaria / metasAsesores + IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                            AND COALESCE(programable, 0) != 1,
-                        ppr.asesor,
-                        NULL)) < metasAsesores, meta_total_diaria / metasAsesores * .5,0) AS meta_total_diaria,
-                meta_hotel_diaria / metasAsesores + IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                            AND COALESCE(programable, 0) != 1,
-                        ppr.asesor,
-                        NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * .5,0) AS meta_hotel_diaria,
+                meta_total_diaria / metasAsesores + 
+                        IF(vacsCovrd<metasAsesores,0, -- Linea para comentar o eliminar después del 1 de abril de 2019
+                            IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                                AND COALESCE(programable, 0) != 1,
+                            ppr.asesor,
+                            NULL)) < metasAsesores, meta_total_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
+                        -- NULL)) < metasAsesores, meta_total_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
+                        ) -- Linea para comentar o eliminar después del 1 de abril de 2019
+                        AS meta_total_diaria,
+                meta_hotel_diaria / metasAsesores + 
+                        IF(vacsCovrd<metasAsesores,0, -- Linea para comentar o eliminar después del 1 de abril de 2019
+                            IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
+                                AND COALESCE(programable, 0) != 1,
+                            ppr.asesor,
+                            NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
+                        -- NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
+                        ) -- Linea para comentar o eliminar después del 1 de abril de 2019
+                        AS meta_hotel_diaria,
                 metasAsesores,
                 COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
                         AND COALESCE(programable, 0) != 1,
@@ -1422,7 +1453,9 @@ class Venta extends REST_Controller {
             FROM
                 byPDV p
                     LEFT JOIN
-                pdvProg ppr ON PdvId = COALESCE(ppr.pdv, oficina)
+                pdvProg ppr ON PdvId = ofOK
+					LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
+				pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
             GROUP BY ppr.Fecha , PdvId
             HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
             $this->db->query("ALTER TABLE metasPorAsesor ADD PRIMARY KEY (Fecha, PdvId)");
@@ -1707,94 +1740,12 @@ class Venta extends REST_Controller {
             $inicio = $this->uri->segment(3);
             
             $this->db->query("SET @inicio = '$inicio'");
-            $this->db->query("SET @fin = ADDDATE(@inicio,1)");
-
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS callsOut");
-            $this->db->query("CREATE TEMPORARY TABLE callsOut SELECT 
-                                a.*,
-                                Skill,
-                                direction,
-                                SUBSTRING(Llamante,
-                                    LENGTH(Llamante) - 6,
-                                    7) AS callCompare
-                            FROM
-                                t_Answered_Calls a
-                                    LEFT JOIN
-                                Cola_Skill b ON a.qNumber = b.queue
-                            WHERE
-                                Fecha = @inicio 
-                            HAVING Skill IN (35,5,29)
-                                    AND direction = 2");
-
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS locsConc");
-            $this->db->query("CREATE TEMPORARY TABLE locsConc
-                            SELECT 
-                                a.Localizador,
-                                COUNT(DISTINCT masterlocatorid) AS Saldado,
-                                GROUP_CONCAT(DISTINCT masterlocatorid) AS LocsConcretados,
-                                GROUP_CONCAT(DISTINCT NOMBREASESOR(b.asesor,1)) AS AsesoresCierre
-                            FROM
-                                t_base_ob a
-                                    LEFT JOIN
-                                t_masterlocators b ON CAST(a.dtCreated AS DATE) = CAST(b.dtCreated AS DATE)
-                                    AND a.correo = b.correo
-                            WHERE
-                                CAST(a.dtCreated AS DATE) = @inicio
-                                    AND b.asesor >= 0
-                            GROUP BY a.Localizador");
-            $this->db->query("ALTER TABLE locsConc ADD PRIMARY KEY (Localizador)");
-                            
             $query = "SELECT 
-                        CAST(a.dtCreated AS DATE) AS Fecha,
-                        CAST(a.dtCreated AS TIME) AS Hora,
-                        a.Localizador,
-                        gpoCanalKpi,
-                        tipoCanal,
-                        ob.name,
-                        nombreCliente,
-                        a.correo,
-                        Servicios,
-                        COUNT(IF(Duracion < '00:00:50' OR Answered = 0,
-                            ac_id,
-                            NULL)) AS Intentos,
-                        COUNT(IF(Duracion >= '00:00:50' AND Answered = 1,
-                            ac_id,
-                            NULL)) AS Efectivas,
-                        GROUP_CONCAT(DISTINCT NOMBREASESOR(c.asesor, 1)) AS asesores,
-                        MIN(c.Hora) AS primerIntento,
-                        MAX(c.Hora) AS ultimoIntento,
-                        asesoresCierre as Concretada,
-                        LocsConcretados as LocsSaldados
+                        * 
                     FROM
-                        t_base_ob a LEFT JOIN config_obStatus ob ON a.obStatus=ob.id
-                            LEFT JOIN
-                        chanGroups gp ON a.chanId = gp.id
-                            LEFT JOIN
-                        locsConc lc ON a.Localizador = lc.Localizador
-                            LEFT JOIN 
-                        t_masterlocators ml ON a.Localizador=ml.masterlocatorid
-                            LEFT JOIN
-                        callsOut c ON SUBSTRING(a.telFijo,
-                                LENGTH(a.telFijo) - 6,
-                                7) = callCompare OR SUBSTRING(a.telMobile,
-                                LENGTH(a.telMobile) - 6,
-                                7) = callCompare
+                        t_obBaseSum
                     WHERE
-                            a.dtCreated BETWEEN @inicio AND @fin 
-                            -- a.dtCreated>=CURDATE()
-                            AND pais = 'MX'
-                            AND (isQuote = 1
-                            OR (isQuote = 0 AND ml.asesor>=0))
-                            AND tipoCanal NOT LIKE '%Offline%'
-                            AND tipoCanal NOT LIKE '%pdv%'
-                            AND marca = 'Marcas Propias'
-                            AND (LENGTH(a.telFijo) >= 7
-                            OR LENGTH(a.telMobile) >= 7)
-                            AND (Servicios LIKE '%Hotel%'
-                            OR Servicios LIKE '%Vuelo%')
-                            AND a.correo NOT LIKE '%pricetra%'
-                            AND nombreCliente NOT LIKE'%test%'
-                    GROUP BY a.Localizador";
+                        Fecha=@inicio";
 
 
             if( $q = $this->db->query( $query ) ){
