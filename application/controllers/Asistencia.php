@@ -1575,118 +1575,136 @@ public function pyaV2_get(){
             $error = array();
 
             $regsByAsesor = array();
+            $omited = 0;
+            $saved = 0;
+
+            setlocale(LC_ALL, 'es_MX');
+
+            $lpQ = $this->db->query("SELECT schedules_editPastCurrent FROM userDB a LEFT JOIN profilesDB b ON a.profile=b.id WHERE asesor_id=".$_GET['usid']);
+            $lpR = $lpQ->row_array();
+            $lpLicense = $lpR['schedules_editPastCurrent'];
+            $td = date('Ymd');
 
             foreach($data as $item => $info){
 
                 unset($info['dep']);
 
-                if(isset($regsByAsesor[$info['asesor']])){
-                    $regsByAsesor[$info['asesor']]++;
+                if($lpLicense != '1' 
+                    && intval(date('Y',strtotime($info['Fecha']))) <=intval(date('Y')) 
+                    && intval(date('n',strtotime($info['Fecha']))) <= intval(date('n'))
+                    && intval(date('j')) >= 5 ){
+                    $omited++;
                 }else{
-                    $regsByAsesor[$info['asesor']] = 1;
-                }
+                    $saved++;
 
-                $oldQ = $this->db->query("SELECT * FROM asesores_programacion WHERE asesor=".$info['asesor']." AND Fecha='".$info['Fecha']."'");
-                $oldV = $oldQ->row_array();
-                $oldVal = json_encode($oldV);
+                    if(isset($regsByAsesor[$info['asesor']])){
+                        $regsByAsesor[$info['asesor']]++;
+                    }else{
+                        $regsByAsesor[$info['asesor']] = 1;
+                    }
 
-                $insert = array( 
-                    'Fecha' => $info['Fecha'], 
-                    'asesor' => $info['asesor'], 
-                    'jornada start' => $info['js'] == null ? null : date("H:i", strtotime($info['js'])).":00", 
-                    'jornada end' => $info['je'] == null ? null : date("H:i", strtotime($info['je'])).":00", 
-                    'extra1 start' => $info['x1s'] == null ? null : date("H:i", strtotime($info['x1s'])).":00", 
-                    'extra1 end' => $info['x1e'] == null ? null : date("H:i", strtotime($info['x1e'])).":00", 
-                    'extra2 start' => $info['x2s'] == null ? null : date("H:i", strtotime($info['x2s'])).":00", 
-                    'extra2 end' => $info['x2e'] == null ? null : date("H:i", strtotime($info['x2e'])).":00", 
-                    'comida start' => $info['cs'] == null ? null : date("H:i", strtotime($info['cs'])).":00", 
-                    'comida end' => $info['ce'] == null ? null : date("H:i", strtotime($info['ce'])).":00"
-                );
-                $upd = " ON DUPLICATE KEY UPDATE ";
-                $fields = "(";
-                $values = "(";
-                
-                foreach($insert as $key => $field){
-                    $value = $field == null ? "NULL" : "'$field'";
-                    $upd .= "`$key` = $value, ";
+                    $oldQ = $this->db->query("SELECT * FROM asesores_programacion WHERE asesor=".$info['asesor']." AND Fecha='".$info['Fecha']."'");
+                    $oldV = $oldQ->row_array();
+                    $oldVal = json_encode($oldV);
 
-                    $fields .= "`$key`, ";
-                    $values .= "$value, ";
-                }
-
-                $upd = substr($upd,0,-2);
-                $fields = substr($fields,0,-2).")";
-                $values = substr($values,0,-2).")";
-
-                $ins = "INSERT INTO `Historial Programacion` $fields VALUES $values";
-                $query = $ins.$upd;
-                if(!$this->db->query($query)){
-                    array_push($error, array( 'Fecha' => $info['Fecha'], 'asesor' => $info['asesor'] ) );
-                }
-
-                $nUpd = " ON DUPLICATE KEY UPDATE ";
-                foreach($info as $key => $field){
-                    if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' && $key != 'dep' ){
+                    $insert = array( 
+                        'Fecha' => $info['Fecha'], 
+                        'asesor' => $info['asesor'], 
+                        'jornada start' => $info['js'] == null ? null : date("H:i", strtotime($info['js'])).":00", 
+                        'jornada end' => $info['je'] == null ? null : date("H:i", strtotime($info['je'])).":00", 
+                        'extra1 start' => $info['x1s'] == null ? null : date("H:i", strtotime($info['x1s'])).":00", 
+                        'extra1 end' => $info['x1e'] == null ? null : date("H:i", strtotime($info['x1e'])).":00", 
+                        'extra2 start' => $info['x2s'] == null ? null : date("H:i", strtotime($info['x2s'])).":00", 
+                        'extra2 end' => $info['x2e'] == null ? null : date("H:i", strtotime($info['x2e'])).":00", 
+                        'comida start' => $info['cs'] == null ? null : date("H:i", strtotime($info['cs'])).":00", 
+                        'comida end' => $info['ce'] == null ? null : date("H:i", strtotime($info['ce'])).":00"
+                    );
+                    $upd = " ON DUPLICATE KEY UPDATE ";
+                    $fields = "(";
+                    $values = "(";
+                    
+                    foreach($insert as $key => $field){
                         $value = $field == null ? "NULL" : "'$field'";
-                        $nUpd .= "`$key` = VALUES($key), ";
+                        $upd .= "`$key` = $value, ";
+
+                        $fields .= "`$key`, ";
+                        $values .= "$value, ";
                     }
-                }
-                $nUpd = substr($nUpd,0,-2);
 
-                $nIns = $this->db->set($info)->get_compiled_insert('asesores_programacion');
-                $nQ = $nIns.$nUpd;
-                $this->db->query($nQ);
+                    $upd = substr($upd,0,-2);
+                    $fields = substr($fields,0,-2).")";
+                    $values = substr($values,0,-2).")";
 
-                if( isset($cambioFlag) && $cambioFlag == 1 ){
-                    $campo = "Cambio de horario ".$info['Fecha'];
-                }else{
-                    $campo = "Ajuste de horario ".$info['Fecha'];
-                }
+                    $ins = "INSERT INTO `Historial Programacion` $fields VALUES $values";
+                    $query = $ins.$upd;
+                    if(!$this->db->query($query)){
+                        array_push($error, array( 'Fecha' => $info['Fecha'], 'asesor' => $info['asesor'] ) );
+                    }
 
-                $historic = array(
-                    'asesor' => $info['asesor'],
-                    'tipo' => 0,
-                    'campo' => $campo,
-                    'old_val' => $oldVal,
-                    'new_val' => json_encode($info),
-                    'changed_by' => $_GET['usid']
-                );
+                    $nUpd = " ON DUPLICATE KEY UPDATE ";
+                    foreach($info as $key => $field){
+                        if( $key != 'asesor' && $key != 'Fecha' && $key != 'id' && $key != 'dep' ){
+                            $value = $field == null ? "NULL" : "'$field'";
+                            $nUpd .= "`$key` = VALUES($key), ";
+                        }
+                    }
+                    $nUpd = substr($nUpd,0,-2);
 
-                // $this->db->set($historic)->insert('historial_asesores');
+                    $nIns = $this->db->set($info)->get_compiled_insert('asesores_programacion');
+                    $nQ = $nIns.$nUpd;
+                    $this->db->query($nQ);
 
-                unset($historic['campo']);
+                    if( isset($cambioFlag) && $cambioFlag == 1 ){
+                        $campo = "Cambio de horario ".$info['Fecha'];
+                    }else{
+                        $campo = "Ajuste de horario ".$info['Fecha'];
+                    }
 
-                if( isset($cambioFlag) && $cambioFlag == 1 ){
-                    $historic['tipo'] = $tipo;
-                    $historic['caso'] = $caso;
-                }
-                
-                if( $regsByAsesor[$info['asesor']] > 1 ){
-                    $counts = 0;
-                }else{
-                    switch($tipo){
-                        case 2:
-                        case '2':
-                        case 4:
-                        case '4':
-                        $counts = 1;
-                        break;
-                        default:
+                    $historic = array(
+                        'asesor' => $info['asesor'],
+                        'tipo' => 0,
+                        'campo' => $campo,
+                        'old_val' => $oldVal,
+                        'new_val' => json_encode($info),
+                        'changed_by' => $_GET['usid']
+                    );
+
+                    // $this->db->set($historic)->insert('historial_asesores');
+
+                    unset($historic['campo']);
+
+                    if( isset($cambioFlag) && $cambioFlag == 1 ){
+                        $historic['tipo'] = $tipo;
+                        $historic['caso'] = $caso;
+                    }
+                    
+                    if( $regsByAsesor[$info['asesor']] > 1 ){
                         $counts = 0;
-                        break;
+                    }else{
+                        switch($tipo){
+                            case 2:
+                            case '2':
+                            case 4:
+                            case '4':
+                            $counts = 1;
+                            break;
+                            default:
+                            $counts = 0;
+                            break;
+                        }
                     }
+                    $historic['countAsChange'] = $counts;
+                    $historic['Fecha'] = $info['Fecha'];
+
+
+                    $ct = $this->db->set($historic)->get_compiled_insert('asesores_cambioTurno');
+                    $query = $ct." ON DUPLICATE KEY UPDATE countAsChange=VALUES(countAsChange), old_val=VALUES(old_val), new_val=VALUES(new_val), tipo=VALUES(tipo), changed_by=VALUES(changed_by), caso=VALUES(caso)";
+                    $this->db->query($query);
                 }
-                $historic['countAsChange'] = $counts;
-                $historic['Fecha'] = $info['Fecha'];
-
-
-                $ct = $this->db->set($historic)->get_compiled_insert('asesores_cambioTurno');
-                $query = $ct." ON DUPLICATE KEY UPDATE countAsChange=VALUES(countAsChange), old_val=VALUES(old_val), new_val=VALUES(new_val), tipo=VALUES(tipo), changed_by=VALUES(changed_by), caso=VALUES(caso)";
-                $this->db->query($query);
             }
 
             if( count( $error ) == 0 ){
-                okResponse( count($data).' elemento(s) guardados', 'data', true, $this );
+                okResponse( $saved.' elemento(s) guardados', 'data', true, $this, 'omited', $omited );
             }else{
                 errResponse( "Error en la base de datos. ".count( $error )." elementos con errores", REST_Controller::HTTP_BAD_REQUEST, $this, 'errores', $errores );
             }

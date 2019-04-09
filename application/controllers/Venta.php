@@ -1389,7 +1389,7 @@ class Venta extends REST_Controller {
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProg");
             $this->db->query("CREATE TEMPORARY TABLE pdvProg
-            SELECT ap.*, programable, oficina, 
+            SELECT ap.*, bonoPdv, oficina, 
              COALESCE(ap.pdv,dp.oficina) as ofOK -- 20190315 Ajustes en query para indexar oficina
              FROM asesores_programacion ap 
                     LEFT JOIN
@@ -1409,53 +1409,95 @@ class Venta extends REST_Controller {
             $this->db->query("ALTER TABLE pdvProg ADD INDEX (ofOK ASC)");
 
             // El siguiente bloque se puede comentar a partir del 1 de abril de 2019
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvVacantes");
-            $this->db->query("CREATE TEMPORARY TABLE pdvVacantes
-            SELECT 
-				Fecha, oficina, COUNT(*) as vacsCovrd
-			FROM
-				dep_asesores
-			WHERE
-				Fecha BETWEEN @inicio AND @fin
-					AND vacante IS NOT NULL
-					AND dep = 29
-			GROUP BY Fecha, oficina");
-            $this->db->query("ALTER TABLE pdvVacantes ADD PRIMARY KEY (Fecha, oficina)");
+            // $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvVacantes");
+            // $this->db->query("CREATE TEMPORARY TABLE pdvVacantes
+            // SELECT 
+			// 	Fecha, oficina, COUNT(*) as vacsCovrd
+			// FROM
+			// 	dep_asesores
+			// WHERE
+			// 	Fecha BETWEEN @inicio AND @fin
+			// 		AND vacante IS NOT NULL
+			// 		AND dep = 29
+			// GROUP BY Fecha, oficina");
+            // $this->db->query("ALTER TABLE pdvVacantes ADD PRIMARY KEY (Fecha, oficina)");
 
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasPorAsesor");
-            $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
+            // Ajuste Metas
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS ajusteMetas");
+            $this->db->query("CREATE TEMPORARY TABLE ajusteMetas
             SELECT 
-                ppr.Fecha,
                 PdvId,
-                meta_total_diaria / metasAsesores + 
-                        IF(vacsCovrd<metasAsesores,0, -- Linea para comentar o eliminar después del 1 de abril de 2019
-                            IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                                AND COALESCE(programable, 0) != 1,
-                            ppr.asesor,
-                            NULL)) < metasAsesores, meta_total_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
-                        -- NULL)) < metasAsesores, meta_total_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
-                        ) -- Linea para comentar o eliminar después del 1 de abril de 2019
-                        AS meta_total_diaria,
-                meta_hotel_diaria / metasAsesores + 
-                        IF(vacsCovrd<metasAsesores,0, -- Linea para comentar o eliminar después del 1 de abril de 2019
-                            IF(COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                                AND COALESCE(programable, 0) != 1,
-                            ppr.asesor,
-                            NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
-                        -- NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
-                        ) -- Linea para comentar o eliminar después del 1 de abril de 2019
-                        AS meta_hotel_diaria,
                 metasAsesores,
-                COUNT(IF(COALESCE(js, 0) != COALESCE(je, 0)
-                        AND COALESCE(programable, 0) != 1,
-                    ppr.asesor,
-                    NULL)) AS programados
+                meta_total_diaria,
+                meta_hotel_diaria,
+                COUNT(IF(COALESCE(bonoPdv, 0) = 1
+                        OR COALESCE(js, 1) = COALESCE(je, 0),
+                    1,
+                    NULL)) AS Descansos,
+                IF(metasAsesores <= 1,
+                    meta_total_diaria,
+                    ((meta_total_diaria / metasAsesores) * COUNT(IF(COALESCE(bonoPdv, 0) = 1
+                            OR COALESCE(js, 1) = COALESCE(je, 0),
+                        1,
+                        NULL))) / DAY(LAST_DAY(@inicio))) + (meta_total_diaria / metasAsesores) AS meta_total_ajuste,
+                IF(metasAsesores <= 1,
+                    meta_hotel_diaria,
+                    ((meta_hotel_diaria / metasAsesores) * COUNT(IF(COALESCE(bonoPdv, 0) = 1
+                            OR COALESCE(js, 1) = COALESCE(je, 0),
+                        1,
+                        NULL))) / DAY(LAST_DAY(@inicio))) + (meta_hotel_diaria / metasAsesores) AS meta_hotel_ajuste
             FROM
                 byPDV p
                     LEFT JOIN
                 pdvProg ppr ON PdvId = ofOK
-					LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
-				pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
+            GROUP BY PdvId");
+            $this->db->query("ALTER TABLE ajusteMetas ADD PRIMARY KEY (PdvId)");
+
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasPorAsesor");
+            // $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
+            // SELECT 
+            //     ppr.Fecha,
+            //     PdvId,
+            //     meta_total_diaria / metasAsesores + 
+            //                 IF(COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
+            //                     OR COALESCE(bonoPdv, 0) = 1,
+            //                 NULL,
+            //                 ppr.asesor)) < metasAsesores AND metasAsesores > 1, meta_total_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
+            //             AS meta_total_diaria,
+            //     meta_hotel_diaria / metasAsesores + 
+            //                 IF(COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
+            //                     OR COALESCE(bonoPdv, 0) = 1,
+            //                 NULL,
+            //                 ppr.asesor)) < metasAsesores AND metasAsesores > 1, meta_hotel_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
+            //             -- NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
+            //             AS meta_hotel_diaria,
+            //     metasAsesores,
+            //     COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
+            //             OR COALESCE(bonoPdv, 0) = 1,
+            //         NULL,
+            //         ppr.asesor)) AS programados
+            // FROM
+            //     byPDV p
+            //         LEFT JOIN
+            //     pdvProg ppr ON PdvId = ofOK
+			// 		-- LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
+			// 	-- pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
+            // GROUP BY ppr.Fecha , PdvId
+            // HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
+
+            $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
+            SELECT 
+                ppr.Fecha,
+                PdvId,
+                IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1, 0, meta_total_ajuste) AS meta_total_diaria,
+                IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1, 0, meta_hotel_ajuste) AS meta_hotel_diaria,
+                metasAsesores
+            FROM
+                ajusteMetas p
+                    LEFT JOIN
+                pdvProg ppr ON PdvId = ofOK
+					-- LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
+				-- pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
             GROUP BY ppr.Fecha , PdvId
             HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
             $this->db->query("ALTER TABLE metasPorAsesor ADD PRIMARY KEY (Fecha, PdvId)");
@@ -1471,13 +1513,13 @@ class Venta extends REST_Controller {
                                 SUM(IF(Servicio = 'Hotel',
                                     COALESCE(Monto, 0),
                                     0)) AS MontoHotel,
-                                COALESCE(IF(COALESCE(js,0) != COALESCE(je,1) AND COALESCE(programable,0) != 1,
-                                            meta_total_diaria,
-                                            0),
+                                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
+                                            0,
+                                            meta_total_diaria),
                                         0) AS metaTotal,
-                                COALESCE(IF(COALESCE(js,0) != COALESCE(je,1) AND COALESCE(programable,0) != 1,
-                                            meta_hotel_diaria,
-                                            0),
+                                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
+                                            0,
+                                            meta_hotel_diaria),
                                         0) AS metaHotel
                             FROM
                                 dep_asesores dp
@@ -1801,3 +1843,4 @@ class Venta extends REST_Controller {
     }
 
 }
+
