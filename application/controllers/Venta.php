@@ -1387,161 +1387,198 @@ class Venta extends REST_Controller {
                             byPDV
                         GROUP BY PDV";
 
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProg");
-            $this->db->query("CREATE TEMPORARY TABLE pdvProg
-            SELECT ap.*, bonoPdv, oficina, 
-             COALESCE(ap.pdv,dp.oficina) as ofOK -- 20190315 Ajustes en query para indexar oficina
-             FROM asesores_programacion ap 
-                    LEFT JOIN
-                dep_asesores dp ON ap.asesor = dp.asesor
-                    AND ap.Fecha = dp.Fecha
-                    AND vacante IS NOT NULL
-                    LEFT JOIN
-                asesores_ausentismos au ON ap.asesor = au.asesor
-                    AND ap.Fecha = au.Fecha
-                    LEFT JOIN
-                config_tiposAusentismos cta ON au.ausentismo = cta.id
-            WHERE
-                ap.Fecha BETWEEN @inicio AND @fin AND vacante IS NOT NULL");
-            $this->db->query("ALTER TABLE pdvProg ADD PRIMARY KEY (Fecha, asesor)");
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvVac");
+            $this->db->query("CREATE TEMPORARY TABLE pdvVac
+                        SELECT 
+                            f.Fecha,
+                            a.id as pdvIdVac,
+                            customZone,
+                            COUNT(ap.id) AS plazas,
+                            COUNT(dp.asesor) AS cubiertos
+                        FROM
+                            Fechas f
+                                JOIN
+                            PDVs a
+                                LEFT JOIN
+                            cat_zones cz ON a.ciudad = cz.id
+                                LEFT JOIN
+                            asesores_plazas ap ON a.id = ap.oficina AND ap.Status = 1
+                                AND ap.fin >= LAST_DAY(@inicio)
+                                AND ap.Activo = 1
+                                LEFT JOIN
+                            dep_asesores dp ON ap.id = dp.vacante
+                                AND dp.Fecha = f.Fecha
+                        WHERE
+                            pais = 'MX' AND a.Activo = 1
+                                AND f.Fecha BETWEEN @inicio AND LAST_DAY(@inicio)
+                        GROUP BY Fecha , a.id");
+            $this->db->query("ALTER TABLE pdvVac ADD PRIMARY KEY (Fecha, pdvIdVac)");
 
-            // 20190315 Ajustes en query para indexar oficina
-            $this->db->query("ALTER TABLE pdvProg ADD INDEX (ofOK ASC)");
-
-            // El siguiente bloque se puede comentar a partir del 1 de abril de 2019
-            // $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvVacantes");
-            // $this->db->query("CREATE TEMPORARY TABLE pdvVacantes
-            // SELECT 
-			// 	Fecha, oficina, COUNT(*) as vacsCovrd
-			// FROM
-			// 	dep_asesores
-			// WHERE
-			// 	Fecha BETWEEN @inicio AND @fin
-			// 		AND vacante IS NOT NULL
-			// 		AND dep = 29
-			// GROUP BY Fecha, oficina");
-            // $this->db->query("ALTER TABLE pdvVacantes ADD PRIMARY KEY (Fecha, oficina)");
-
-            // Ajuste Metas
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS ajusteMetas");
-            $this->db->query("CREATE TEMPORARY TABLE ajusteMetas
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProgRev");
+            $this->db->query("CREATE TEMPORARY TABLE pdvProgRev
             SELECT 
-                PdvId,
-                metasAsesores,
-                meta_total_diaria,
-                meta_hotel_diaria,
-                COUNT(IF(COALESCE(bonoPdv, 0) = 1
-                        OR COALESCE(js, 1) = COALESCE(je, 0),
+                pv.Fecha,
+                pdvIdVac,
+                customZone,
+                NOMBREPDV(pdvIdVac, 1) AS PDV,
+                FINDSUPERDAYPDV(@inicio, pdvIdVac, 2) AS Supervisor,
+                FINDCOORDDAYPDV(@inicio, customZone, 2) AS Coordinador,
+                plazas,
+                cubiertos,
+                COALESCE(prog,0) as prog,
+                COALESCE(descansos,0) as descansos,
+                COALESCE(descansosNp,0) as descansosNp,
+                IF(cubiertos-(COALESCE(prog,0)-COALESCE(descansos,0)+COALESCE(descansosNp,0))<0,(cubiertos-(COALESCE(prog,0)-COALESCE(descansos,0)+COALESCE(descansosNp,0)))*-1,0) as ddF,
+                CASE
+                    WHEN COALESCE(prog,0)-COALESCE(descansos,0) > plazas THEN COALESCE(prog,0)-COALESCE(descansos,0)-plazas
+                    WHEN COALESCE(prog,0)-COALESCE(descansos,0) = plazas THEN 0
+                    WHEN COALESCE(prog,0)-COALESCE(descansos,0) < plazas THEN
+                        CASE
+                            WHEN COALESCE(prog,0)>COALESCE(descansos,0) THEN COALESCE(prog,0)-plazas
+                            WHEN COALESCE(prog,0)=COALESCE(descansos,0) THEN IF(cubiertos=0,-1,cubiertos*-1)
+                            WHEN COALESCE(prog,0)-COALESCE(descansos,0) > plazas THEN COALESCE(prog,0)-COALESCE(descansos,0)
+                            WHEN COALESCE(prog,0)-COALESCE(descansos,0) <= (plazas-cubiertos) THEN 0
+                            ELSE COALESCE(prog,0)-COALESCE(descansos,0)- cubiertos
+                        END
+                END as dif,
+                asesores, asesoresDescanso
+            FROM
+                pdvVac pv
+                    LEFT JOIN
+                (SELECT 
+                a.Fecha,
+                COALESCE(pdv, oficina) AS pdvOK,
+                COUNT(*) AS prog,
+                COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0) OR COALESCE(ta.programable,100)=1,
                     1,
-                    NULL)) AS Descansos,
-                IF(metasAsesores <= 1,
-                    meta_total_diaria,
-                    ((meta_total_diaria / metasAsesores) * COUNT(IF(COALESCE(bonoPdv, 0) = 1
-                            OR COALESCE(js, 1) = COALESCE(je, 0),
-                        1,
-                        NULL))) / DAY(LAST_DAY(@inicio))) + (meta_total_diaria / metasAsesores) AS meta_total_ajuste,
-                IF(metasAsesores <= 1,
-                    meta_hotel_diaria,
-                    ((meta_hotel_diaria / metasAsesores) * COUNT(IF(COALESCE(bonoPdv, 0) = 1
-                            OR COALESCE(js, 1) = COALESCE(je, 0),
-                        1,
-                        NULL))) / DAY(LAST_DAY(@inicio))) + (meta_hotel_diaria / metasAsesores) AS meta_hotel_ajuste
+                    NULL)) AS descansos,
+                COUNT(IF(COALESCE(ta.programable,100)=1 AND COALESCE(ta.bonoPdv,100)=0  AND au.d=0 AND au.b=0,
+                    1,
+                    NULL)) AS descansosNp,
+                GROUP_CONCAT(IF(COALESCE(js, 0) = COALESCE(je, 0) OR COALESCE(ta.programable,100)=1,
+                    NOMBREASESOR(a.asesor, 2),
+                    NULL)) AS asesoresDescanso,
+                GROUP_CONCAT(IF(COALESCE(js, 0) = COALESCE(je, 0) OR COALESCE(ta.programable,100)=1,
+                    NULL,
+                    NOMBREASESOR(a.asesor, 2))) AS asesores
             FROM
-                byPDV p
+                asesores_programacion a
                     LEFT JOIN
-                pdvProg ppr ON PdvId = ofOK
-            GROUP BY PdvId");
-            $this->db->query("ALTER TABLE ajusteMetas ADD PRIMARY KEY (PdvId)");
+                dep_asesores dp ON a.asesor = dp.asesor
+                    AND a.Fecha = dp.Fecha
+                    LEFT JOIN
+                asesores_ausentismos au ON a.Fecha = au.Fecha
+                    AND a.asesor = au.asesor
+                    LEFT JOIN
+                config_tiposAusentismos ta ON au.ausentismo = ta.id
+            WHERE
+                a.Fecha BETWEEN @inicio AND LAST_DAY(@inicio)
+            GROUP BY a.Fecha , pdvOK) b ON pdvIdVac = pdvOK AND pv.Fecha = b.Fecha
+            GROUP BY pv.Fecha , pdvIdVac");
 
-            $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasPorAsesor");
-            // $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
-            // SELECT 
-            //     ppr.Fecha,
-            //     PdvId,
-            //     meta_total_diaria / metasAsesores + 
-            //                 IF(COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
-            //                     OR COALESCE(bonoPdv, 0) = 1,
-            //                 NULL,
-            //                 ppr.asesor)) < metasAsesores AND metasAsesores > 1, meta_total_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
-            //             AS meta_total_diaria,
-            //     meta_hotel_diaria / metasAsesores + 
-            //                 IF(COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
-            //                     OR COALESCE(bonoPdv, 0) = 1,
-            //                 NULL,
-            //                 ppr.asesor)) < metasAsesores AND metasAsesores > 1, meta_hotel_diaria / metasAsesores * .5,0) -- Suma el 50% de meta en el descanso del asesor
-            //             -- NULL)) < metasAsesores, meta_hotel_diaria / metasAsesores * 0,0) -- No suma meta en descanso del asesor
-            //             AS meta_hotel_diaria,
-            //     metasAsesores,
-            //     COUNT(IF(COALESCE(js, 0) = COALESCE(je, 0)
-            //             OR COALESCE(bonoPdv, 0) = 1,
-            //         NULL,
-            //         ppr.asesor)) AS programados
-            // FROM
-            //     byPDV p
-            //         LEFT JOIN
-            //     pdvProg ppr ON PdvId = ofOK
-			// 		-- LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
-			// 	-- pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
-            // GROUP BY ppr.Fecha , PdvId
-            // HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS pdvProgSum");
+            $this->db->query("CREATE TEMPORARY TABLE pdvProgSum
+                SELECT 
+                    pdvIdVac,
+                    plazas,
+                    tp,
+                    td,
+                    tc,
+                    tl,
+                    w,
+                    d,
+                    df,
+                    IF(plazas = 1,
+                        mdt,
+                        COALESCE((mdt * 0.5 * d / w), 0) + mdt) AS md_t,
+                    IF(plazas = 1,
+                        mdh,
+                        COALESCE((mdh * 0.5 * d / w), 0) + mdh) AS md_h,
+                    IF(plazas = 1,
+                        mdt,
+                        COALESCE(((mdt * 0.5 * d) / (d + df)), 0) + (COALESCE((mdt * 0.5 * d / w), 0) + mdt)) AS mds_t,
+                    IF(plazas = 1,
+                        mdh,
+                        COALESCE(((mdh * 0.5 * d) / (d + df)), 0) + (COALESCE((mdh * 0.5 * d / w), 0) + mdh)) AS mds_h
+                FROM
+                    (SELECT 
+                        pdvIdVac,
+                            plazas,
+                            SUM(prog) AS tp,
+                            SUM(descansos) - SUM(descansosNp) AS td,
+                            SUM(cubiertos) AS tc,
+                            SUM(plazas) AS tl,
+                            IF(SUM(prog) - (SUM(descansos) - SUM(descansosNp)) > SUM(plazas), SUM(cubiertos), (SUM(prog) - (SUM(descansos) - SUM(descansosNp)))) AS w,
+                            SUM(plazas) - IF(SUM(prog) - (SUM(descansos) - SUM(descansosNp)) > SUM(cubiertos), SUM(cubiertos), (SUM(prog) - (SUM(descansos) - SUM(descansosNp)))) AS d,
+                            SUM(ddF) AS df,
+                            meta_total_diaria / plazas AS mdt,
+                            meta_hotel_diaria / plazas AS mdh
+                    FROM
+                        pdvProgRev a
+                    LEFT JOIN metas_pdv m ON a.pdvIdVac = m.pdv
+                        AND m.mes = MONTH(@inicio)
+                        AND m.anio = YEAR(@inicio)
+                    GROUP BY pdvIdVac) a");
+            $this->db->query("ALTER TABLE pdvProgSum ADD PRIMARY KEY (pdvIdVac)");
 
-            $this->db->query("CREATE TEMPORARY TABLE metasPorAsesor
+            $this->db->query("DROP TEMPORARY TABLE IF EXISTS metasAjustadas");
+            $this->db->query("CREATE TEMPORARY TABLE metasAjustadas
             SELECT 
-                ppr.Fecha,
-                PdvId,
-                IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1, 0, meta_total_ajuste) AS meta_total_diaria,
-                IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1, 0, meta_hotel_ajuste) AS meta_hotel_diaria,
-                metasAsesores
+                a.Fecha,
+                a.pdvIdVac,
+                IF(prog - (descansos - descansosNp) >= cubiertos,
+                    md_t,
+                    mds_t) AS meta_total_ajuste,
+                IF(prog - (descansos - descansosNp) >= cubiertos,
+                    md_h,
+                    mds_h) AS meta_hotel_ajuste
             FROM
-                ajusteMetas p
+                pdvProgRev a
                     LEFT JOIN
-                pdvProg ppr ON PdvId = ofOK
-					-- LEFT JOIN -- Linea para comentar o eliminar después del 1 de abril de 2019
-				-- pdvVacantes pv ON ofOK = pv.oficina AND ppr.Fecha=pv.Fecha -- Linea para comentar o eliminar después del 1 de abril de 2019
-            GROUP BY ppr.Fecha , PdvId
-            HAVING Fecha IS NOT NULL AND PdvId IS NOT NULL");
-            $this->db->query("ALTER TABLE metasPorAsesor ADD PRIMARY KEY (Fecha, PdvId)");
+                pdvProgSum b ON a.pdvIdVac = b.pdvIdVac");
+            $this->db->query("ALTER TABLE metasAjustadas ADD PRIMARY KEY (Fecha, pdvIdVac)");
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS dailyPdv");
             $this->db->query("CREATE TEMPORARY TABLE dailyPdv SELECT 
-                                dp.Fecha,
-                                NOMBREASESOR(dp.asesor, 2) AS Nombre,
-                                NOMBREPUESTO(dp.puesto) as Puesto,
-                                FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
-                                COALESCE(ap.pdv, dp.oficina) AS pdvId,
-                                SUM(COALESCE(Monto, 0)) AS Monto,
-                                SUM(IF(Servicio = 'Hotel',
-                                    COALESCE(Monto, 0),
-                                    0)) AS MontoHotel,
-                                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
-                                            0,
-                                            meta_total_diaria),
-                                        0) AS metaTotal,
-                                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
-                                            0,
-                                            meta_hotel_diaria),
-                                        0) AS metaHotel
-                            FROM
-                                dep_asesores dp
-                                    LEFT JOIN
-                                asesores_programacion ap ON dp.asesor = ap.asesor
-                                    AND dp.Fecha = ap.Fecha
-                                    LEFT JOIN
-                                asesores_ausentismos au ON ap.asesor = au.asesor
-                                    AND ap.Fecha = au.Fecha
-                                    LEFT JOIN
-                                config_tiposAusentismos cta ON au.ausentismo = cta.id
-                                    LEFT JOIN
-                                ventaPdv v ON dp.asesor = v.asesor
-                                    AND dp.Fecha = v.Fecha
-                                    LEFT JOIN
-                                metasPorAsesor mp ON dp.Fecha=mp.Fecha AND COALESCE(ap.pdv, dp.oficina) = mp.PdvId
-                            WHERE
-                                dp.puesto NOT IN (11 , 17, 48)
-                                    AND dp.Fecha BETWEEN @inicio AND @fin
-                                    AND dp.dep = 29
-                                    AND dp.vacante IS NOT NULL
-                            GROUP BY dp.Fecha , dp.asesor");
+            dp.Fecha,
+            NOMBREASESOR(dp.asesor, 2) AS Nombre,
+            NOMBREPUESTO(dp.puesto) as Puesto,
+            NOMBREPDV(COALESCE(ap.pdv, dp.oficina), 2) AS PDV,
+            FINDSUPERDAYPDV(dp.Fecha, oficina, 2) AS Supervisor,
+            COALESCE(ap.pdv, dp.oficina) AS pdvId,
+            SUM(COALESCE(Monto, 0)) AS Monto,
+            SUM(IF(Servicio = 'Hotel',
+                COALESCE(Monto, 0),
+                0)) AS MontoHotel,
+                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
+                            0,
+                            meta_total_ajuste),
+                        0) AS metaTotal,
+                COALESCE(IF(COALESCE(js,0) = COALESCE(je,0) OR COALESCE(bonoPdv,0) = 1,
+                            0,
+                            meta_hotel_ajuste),
+                        0) AS metaHotel
+        FROM
+            dep_asesores dp
+                LEFT JOIN
+            asesores_programacion ap ON dp.asesor = ap.asesor
+                AND dp.Fecha = ap.Fecha
+                LEFT JOIN
+            asesores_ausentismos au ON ap.asesor = au.asesor
+                AND ap.Fecha = au.Fecha
+                LEFT JOIN
+            config_tiposAusentismos cta ON au.ausentismo = cta.id
+                LEFT JOIN
+            ventaPdv v ON dp.asesor = v.asesor
+                AND dp.Fecha = v.Fecha
+                LEFT JOIN
+                metasAjustadas mp ON COALESCE(ap.pdv, dp.oficina) = mp.pdvIdVac AND dp.Fecha=mp.Fecha
+        WHERE
+            dp.puesto NOT IN (11 , 17, 48)
+                AND dp.Fecha BETWEEN @inicio AND @fin
+                AND dp.dep = 29
+                AND dp.vacante IS NOT NULL
+        GROUP BY dp.Fecha , dp.asesor");
 
             $dailyQ = "SELECT * FROM dailyPdv";
             $sumAllQ = "SELECT * FROM byPDV";
