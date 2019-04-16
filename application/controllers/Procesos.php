@@ -633,9 +633,7 @@ class Procesos extends REST_Controller {
 
   public function pauseCheck_get(){
 
-    $this->db->query("DROP TEMPORARY TABLE IF EXISTS deletePauses");
-    $this->db->query("CREATE TEMPORARY TABLE deletePauses SELECT * FROM asesores_pausas WHERE CAST(Inicio as DATE)>=ADDDATE(CURDATE(),-1)");
-    $this->db->query("SELECT PAUSECALC(asesor, Inicio, Fin) as tmp FROM deletePauses");
+    $this->db->query("CALL BUILDPAUSEMON()");
 
       
 

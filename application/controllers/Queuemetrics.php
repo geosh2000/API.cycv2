@@ -55,18 +55,10 @@ class Queuemetrics extends REST_Controller {
               ->where_in( 'tipo', $data['block'] );
 
       if( $q = $this->db->get() ){
-          
-        $this->db->select("a.asesor,
-                            IF(COALESCE(correctPauseType, tipo)=3,'Comida',IF(COALESCE(correctPauseType, tipo)=11,'PNP','Otros')) AS tipoPausa,
-                            SUM(IF(COALESCE(b.status,0) != 1,
-                                TIME_TO_SEC(Duracion),
-                                0))/60 AS Total", FALSE) 
-            ->from('asesores_pausas a')
-            ->join('asesores_pausas_status b', 'a.id=b.id', 'left')
-            ->where( 'inicio >= ', 'CURDATE()', FALSE)
-            ->where( 'a.asesor', $_GET['usid'])
-//            ->where( 'a.asesor', 31)
-            ->group_by(array('a.asesor', 'tipoPausa'));
+
+        $this->db->select("asesor, tipo as tipoPausa, total as Total") 
+            ->from('mon_pausas')
+            ->where( 'asesor', $_GET['usid']);
             
         $pausa = $this->db->get();
         $pausas = array();

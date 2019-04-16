@@ -218,13 +218,23 @@ class Bonos extends REST_Controller {
     
     public function chgStatus_put(){
         $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
-            
+
+            // $lpQ = $this->db->query("SELECT IF(allmighty=1,1,bonos_approve) as bonos_approve FROM userDB a LEFT JOIN profilesDB b ON a.profile=b.id WHERE asesor_id=".$_GET['usid']);
+            $lpQ = $this->db->query("SELECT bonos_approve FROM userDB a LEFT JOIN profilesDB b ON a.profile=b.id WHERE asesor_id=".$_GET['usid']);
+            $lpR = $lpQ->row_array();
+            $lpLicense = $lpR['bonos_approve'];
+
             $data = $this->put();
+
+            if( $lpLicense == 0 && $data['params']['review'] != 1 ){
+                errResponse('No Cuentas con permisos para modificar este bono ', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', 'error'); 
+            }
+            
             
             $rev = $this->db->query("SELECT 
                     IF('".$data['lu']."' = Last_Update,
                         1,
-                        IF('".$data['lu']."' BETWEEN ADDTIME(Last_Update, - '00:01:00') AND ADDTIME(Last_Update, '00:01:00')
+                        IF('".$data['lu']."' BETWEEN ADDTIME(Last_Update, - '00:05:00') AND ADDTIME(Last_Update, '00:05:00')
                             AND approber = ".$_GET['usid'].",
                         1,
                         0)) AS luCheck, NOMBREASESOR(approber,1) as reviewer, review, review_notes as comments, a.status, Last_Update as lu
