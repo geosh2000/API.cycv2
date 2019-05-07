@@ -5,12 +5,13 @@ class venta_help{
     public static function base($class, $inicio, $fin, $prod = false, $pais = null, $mp = true, $outlet = false, $ag = false){
 
       
-        $class->db->select("a.*, canal, gpoCanal, gpoCanalKpi, marca, pais, tipoCanal, c.dep, vacante, puesto, cc, tipo")
+        $class->db->select("a.*, canal, gpoCanal, IF(COALESCE(br.outlet,0)=1,'Outlet',gpoCanalKpi) as gpoCanalKpi, marca, pais, tipoCanal, c.dep, vacante, puesto, cc, ml.tipo")
             ->select("IF(CAST(dtCreated as DATE) = a.Fecha, Localizador, null) as NewLoc, CAST(dtCreated as DATE) as dtCreated", FALSE)
             ->select('ml.asesor')
             ->from('t_hoteles_test a')
             ->join("t_masterlocators ml", "a.Localizador = ml.masterlocatorid", "left")          
             ->join("chanGroups b", "a.chanId = b.id", "left")
+            ->join("PDVs br", 'a.branchId = br.branchId')
             ->join("dep_asesores c", "ml.asesor = c.asesor AND a.Fecha = c.Fecha", "left")
             ->join("cc_apoyo d", "ml.asesor = d.asesor AND a.Fecha BETWEEN d.inicio AND d.fin", "left")
             ->where("a.Fecha BETWEEN", "'$inicio' AND '$fin'", FALSE);
@@ -19,17 +20,18 @@ class venta_help{
             $class->db->where( array( 'marca' => 'Marcas Propias' ) );
         }else{
             $class->db->where( array( 'marca' => 'Marcas Terceros' ) )
-                    ->where( array( 'gpoCanalKpi !=' => 'Avianca') )
+                    ->where( array( 'gpoCanalKpi !=' => 'AVT') )
                     ->where( array( 'gpoCanalKpi !=' => 'COOMEVA') );
         }
 
         if( $pais != null ){ $class->db->where_in('pais', $pais);  }
         if( $pais == null && $mp ){ $class->db->where('pais !=', 'CO');  }
-        if( !$outlet ){ $class->db->where( array( 'gpoCanalKPI !=' => 'Outlet' ) ); }
+        if( !$outlet ){ $class->db->where( 'IF(COALESCE(br.outlet,0)=1,\'Outlet\',gpoCanalKpi) !=', "'Outlet'", FALSE ); }
         if( !$ag ){ $class->db->where( array( 'gpoCanalKPI !=' => 'Agencias' ) ); }
             
 
         $tableLocs = $class->db->get_compiled_select();
+
         $class->db->query("DROP TEMPORARY TABLE IF EXISTS base");
 
         if( $class->db->query("CREATE TEMPORARY TABLE base $tableLocs") ){
@@ -60,7 +62,7 @@ class venta_help{
 
     $class->db->query("DROP TEMPORARY TABLE IF EXISTS locsProdF");
 
-    $class->db->select('a.*, ml.tipo')
+    $class->db->select('a.*, ml.tipo, COALESCE(br.outlet,0) as isOutlet')
             ->select("  CASE 
                         WHEN ml.asesor = 0 AND 3 != ".$params['skin']." THEN 0
                         WHEN tipoRsva LIKE '%Tag%' THEN 50 
@@ -131,6 +133,7 @@ class venta_help{
             ->from("t_hoteles_test a")
             ->join("t_masterlocators ml", "a.Localizador = ml.masterlocatorid", 'left')
             ->join("chanGroups b", "a.chanId = b.id", 'left')
+            ->join("PDVs br", 'a.branchId = br.branchId')
             ->join("dep_asesores dp", "ml.asesor = dp.asesor AND a.Fecha = dp.Fecha", 'left', FALSE)
             ->join("cc_apoyo ap", "ml.asesor = ap.asesor AND a.Fecha BETWEEN ap.inicio AND ap.fin", 'left', FALSE)
             ->join("itemTypes c", "itemType = c.type AND categoryId = c.category", 'left',FALSE)
@@ -150,7 +153,7 @@ class venta_help{
         $class->db->where( array( 'marca' => 'Marcas Propias', 'pais' => $params['sede'] ) );
     }else{
         if( $params['sede'] == 'MX' ){
-            $class->db->where( array( 'marca' => 'Marcas Terceros', 'gpoCanalKpi !=' => 'Avianca') )
+            $class->db->where( array( 'marca' => 'Marcas Terceros', "gpoCanalKpi IN ('Afiliados','Intertours')" => NULL) )
                     ->where( array( 'gpoCanalKpi !=' => 'Outlet') );
                 }
         if( $params['isAgency'] == 0 ){$class->db->where( array( 'gpoCanalKpi !=' => 'Agencias') );}

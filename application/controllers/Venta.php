@@ -109,6 +109,7 @@ class Venta extends REST_Controller {
                 $h = $this->uri->segment(11);
                 $mt = $this->uri->segment(12);
                 $pais = $this->uri->segment(13);
+                $outlet = $this->uri->segment(14);
             // ======================================================================
             // END Get Inputs
             // ======================================================================
@@ -130,6 +131,7 @@ class Venta extends REST_Controller {
                 $t = $type == 1 ? true : false;
                 $td = $td == 1 ? true : false;
                 $prod = $prodIn == 1 ? true : false;
+                $isOutlet = $outlet == 1 ? true : false;
                 $isPaq = $pq == 'true' ? "WHEN isPaq != 0 THEN 'Paquete'" : "";
                 $mp = isset($mt) && $mt==1 ? false : true;
 
@@ -182,12 +184,16 @@ class Venta extends REST_Controller {
                 $qSV = "SUM(Monto) as Monto";
             }
 
-            $table = venta_help::base($this, $start, $end, $prod, $pais, $mp, false, false);
+            $table = venta_help::base($this, $start, $end, $prod, $pais, $mp, true, false);
 
-            // okResponse('ok', 'query', $table, $this);
+            // $q = $this->db->from('base')->get();
+
+
+            // okResponse('ok', 'query', $q->result_array(), $this);
 
             if($t){
                 $pdvType = "CASE 
+                WHEN gpoCanalKpi = 'Outlet' THEN 'Outlet'
                 WHEN gpoCanalKpi = 'PDV' THEN CASE WHEN gpoCanalKpi = 'PDV' THEN 'PDV Presencial' END
                 WHEN tipoRsva LIKE '%Tag%' THEN 'CC OUT'
                 WHEN tipoRsva LIKE '%Out' THEN 'CC OUT'
@@ -200,6 +206,7 @@ class Venta extends REST_Controller {
             END gpoInterno";
             }else{
                 $pdvType = "CASE 
+                WHEN gpoCanalKpi = 'Outlet' THEN 'Outlet'
                 WHEN gpoCanalKpi = 'PDV' THEN CASE WHEN a.tipo = 1 THEN 'CC OUT'
                 WHEN a.tipo = 2 THEN 'PDV IN'
                 ELSE 'PDV Presencial' END
@@ -237,6 +244,7 @@ class Venta extends REST_Controller {
                                 a.tipo) = tp.tipo", 'left', FALSE)
                         ->join("itemTypes it", "a.itemType = it.type AND a.categoryId = it.category", "left")
                         ->group_by('Fecha, Localizador, item');
+
             $okQ = $this->db->get_compiled_select();
 
             $this->db->query("DROP TEMPORARY TABLE IF EXISTS tmpItems");
@@ -307,7 +315,7 @@ class Venta extends REST_Controller {
 
                 }
 
-                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu, '$curr' as currency FROM d_Locs WHERE Fecha=CURDATE()");
+                $luQ = $this->db->query("SELECT MAX(Last_Update) as lu, '$curr' as currency FROM t_Locs WHERE Fecha=CURDATE()");
                 $luR = $luQ->row_array();
                 $lu = $luR['lu'];
                 $currency = $luR['currency'];
@@ -500,7 +508,7 @@ class Venta extends REST_Controller {
                 if($q = $this->db->get()){
                     $result = $q->result_array();
 
-                    $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM d_Locs WHERE Fecha=CURDATE()");
+                    $luQ = $this->db->query("SELECT MAX(Last_Update) as lu FROM t_Locs WHERE Fecha=CURDATE()");
                     $luR = $luQ->row_array();
                     $lu = $luR['lu'];
 
@@ -619,11 +627,7 @@ class Venta extends REST_Controller {
             $tdQ = $this->db->select("CURDATE() as fecha")->get();
             $td = $tdQ->row_array();
             
-            if( $td['fecha'] == $data['Fecha'] ){
-                $this->db->from("d_Locs a");
-            }else{
-                $this->db->from("t_Locs a");
-            }
+            $this->db->from("t_Locs a");
             
             switch($data['skill']){
                 case 35:

@@ -239,17 +239,18 @@ class VentaMonitor extends REST_Controller {
 
             $fecha = $data['Fecha'];
             $hora = $data['Hora'];
+
+            $this->db->select("SUM(IF(grupo != 'abandon', calls, 0)) AS Ans,
+                                SUM(IF(grupo = 'abandon', calls, 0)) AS Abn")
+                    ->from("calls_summary")
+                    ->where('direction',1)
+                    ->where('Skill',$data['skill'])
+                    ->where('Fecha',$fecha);
             
-            if( $data['h'] == 1 ){
-                $this->buildCalls( $fecha, $fecha, 1, 0, $data['skill'] );
-            }else{
-                $this->buildCalls( $fecha, $fecha, 1, 0, $data['skill'], $hora);
+            if( $data['h'] != 1 ){
+                $this->db->where( 'Hora <=', $hora);
             }
 
-
-            $this->db->select("COUNT(IF(direction = 1 AND Desconexion != 'Abandon',Llamante,NULL)) as Ans, COUNT(IF(direction = 1 AND Desconexion = 'Abandon',Llamante,NULL)) as Abn", FALSE)
-                    ->from("callsDep");
-            
             if( $a = $this->db->get() ){
 
                 okResponse( "Información correctamente obtenida", 'data', $a->result_array(), $this );
