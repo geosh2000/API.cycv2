@@ -1667,6 +1667,7 @@ class Venta extends REST_Controller {
                     AND a.Fecha BETWEEN d.inicio AND d.fin
                 LEFT JOIN config_tipoRsva ct ON IF(c.dep IS NULL, IF(ml.asesor <= - 1, - 1, 0), IF(c.dep NOT IN (0 , 3, 5, 29, 35, 50, 52), 0, c.dep)) = ct.dep
                     AND IF(ml.tipo IS NULL OR ml.tipo = '', 0, ml.tipo) = ct.tipo
+                LEFT JOIN PDVs p ON mlBranchId=p.branchid
                 WHERE
                     a.Fecha BETWEEN ADDDATE(@date,-1) AND @date
                         AND marca = 'Marcas Propias'
@@ -1674,6 +1675,7 @@ class Venta extends REST_Controller {
                         AND gpoTipoRsva = 'In'
                         AND CAST(dtCreated AS DATE) BETWEEN ADDDATE(@date,-1) AND @date
                         AND Hora < CAST(NOW() as TIME)
+                        AND outlet=0
                 GROUP BY Localizador
                 HAVING Monto > 0) a
             GROUP BY dia, gpoOk");

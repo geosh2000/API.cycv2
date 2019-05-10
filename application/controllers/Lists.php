@@ -803,4 +803,75 @@ class Lists extends REST_Controller {
       
     }
 
+    public function ovvPromos_get(){
+
+        $fields = $this->db->field_data('ovv_bankPromo');
+
+        $fieldList = array();
+        foreach( $fields as $f ){
+            $fieldList[$f->name] = $f->type;
+        }
+        // okResponse( 'Info Obtenida', 'data', $fieldList, $this);
+
+        $this->db->from('ovv_bankPromo')->order_by('min, mensualidad')->where('activo',1);
+
+        if( $q = $this->db->get() ){
+
+            $result = array();
+            $res = array();
+
+            foreach($q->result_array() as $p => $r){
+
+                foreach( $r as $f => $fR ){
+                    if($fieldList[$f] == 'int'){
+                        $r[$f] = intval($fR);
+                    }
+
+                    if($fieldList[$f] == 'double'){
+                        $r[$f] = floatval($fR);
+                    }
+                }
+
+                $r['descProd']=explode(',',$r['descProd']);
+
+                foreach($r['descProd'] as $pr => $dpR){
+                    if( $dpR == '' ){
+                        unset($r['descProd'][$pr]);
+                    }else{
+                        $r['descProd'][$pr] = intVal($dpR);
+                    }
+                }
+
+                $r['bbvBon'] = $r['bbvBon'] == '1' ? true : false;
+
+                if( isset( $result[$r['min']] ) ){
+                    array_push($result[$r['min']]['promo'],$r);
+                }else{
+                    $result[$r['min']] = array( 'min' => intval($r['min']), 'promo' => array( $r ));
+                }
+            }
+
+            foreach($result as $r => $rOk){
+                array_push($res,$rOk);
+            }
+
+            okResponse( 'Info Obtenida', 'data', $res, $this);
+            
+        }else{
+            errResponse('Error en la base de datos', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+    }
+
+    public function cycVersion_get(){
+        $this->db->from('config_cyc')->where('id',0);
+
+        if( $q = $this->db->get() ){
+
+            okResponse( 'Info Obtenida', 'data', $q->row_array(), $this);
+            
+        }else{
+            errResponse('Error en la base de datos. No se obtuvo la versión más reciente', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
+        }
+    }
+
 }

@@ -361,10 +361,10 @@ class Prorep extends REST_Controller {
 
         if( $params['gen']['sv'] ){
             $this->db->select('SUM(VentaMXN+OtrosIngresosMXN+IF(NewLoc IS NULL,0,EgresosMXN)) as Monto')
-            ->select('SUM(IF(NewLoc IS NULL,0,COALESCE(clientNights,0))) as RN');
+            ->select('SUM(IF(NewLoc IS NOT NULL AND Servicio = \'Hotel\',COALESCE(clientNights,0),0)) as RN');
         }else{
             $this->db->select('SUM(VentaMXN+OtrosIngresosMXN+EgresosMXN) as Monto')
-            ->select('SUM(COALESCE(clientNights,0)) as RN');
+            ->select('SUM(IF(Servicio = \'Hotel\', COALESCE(clientNights,0),0)) as RN');
         }
 
         $fieldsShow = array(
@@ -415,6 +415,12 @@ class Prorep extends REST_Controller {
         if( $params['gen']['loc'] ){
             $this->db->select('Localizador')
             ->group_by('Localizador');
+        }else{
+            if( $params['gen']['sv'] ){
+                $this->db->select('COUNT(DISTINCT CASE WHEN NewLoc IS NOT NULL THEN Localizador END) as Localizador');
+            }else{
+                $this->db->select('COUNT(DISTINCT Localizador) as Localizador');
+            }
         }
 
         if( $q = $this->db->get() ){
