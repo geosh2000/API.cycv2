@@ -69,6 +69,23 @@ function generateToken( $payload, $key ){
 
 }
 
+function funcTrail( $class, $u, $p, $f, $params = null, $ip = null ){
+
+  $insert = array(
+    'page' => $p,
+    'user' => $u,
+    'type' => $f,
+    'ip'   => $ip,
+    'params' => $params
+  );
+
+  $class->db->set($insert)
+        ->insert('site_counter');
+
+  return true;
+
+}
+
 
 
 ?>

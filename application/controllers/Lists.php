@@ -805,6 +805,8 @@ class Lists extends REST_Controller {
 
     public function ovvPromos_get(){
 
+        funcTrail( $this, isset($_GET['usid']) ? $_GET['usid'] : 0 , 'calcOutlet', 'ovvPromos', null, isset($_GET['localIp']) ? $_GET['localIp'] : '0' );
+
         $fields = $this->db->field_data('ovv_bankPromo');
 
         $fieldList = array();

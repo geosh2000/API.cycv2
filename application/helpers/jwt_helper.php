@@ -56,6 +56,7 @@ class JWT
 	}
 
     public static function validateToken($jwt, $comparission, $key = null, $verify = true){
+
 		if($jwt == 'noToken'){
 			return array( "status" => false, "msg" => 'Token Inválido. Sesión no iniciada' );
 		}

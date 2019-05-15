@@ -271,6 +271,8 @@ class Prorep extends REST_Controller {
 
   public function pr_put(){
 
+    funcTrail( $this, isset($_GET['usid']) ? $_GET['usid'] : 0 , 'Prorep', 'pr', json_encode($this->put()), isset($_GET['localIp']) ? $_GET['localIp'] : 0 );
+
     $result = validateToken( $_GET['token'], $_GET['usn'], $func = function(){
         
         $params = $this->put();
@@ -279,7 +281,7 @@ class Prorep extends REST_Controller {
 
         $inicio = $params['data']['fecha']['Fecha']['params'][0];
         $fin = $params['data']['fecha']['Fecha']['params'][1];
-        
+
         $this->db->select("a.*, canal, gpoCanal, IF(COALESCE(br.outlet,0)=1,'Outlet',gpoCanalKpi) as gpoCanalKpiOk, marca, pais, tipoCanal, c.dep, vacante, puesto, cc, ml.tipo")
             ->select("IF(CAST(dtCreated as DATE) = a.Fecha, Localizador, null) as NewLoc, CAST(dtCreated as DATE) as dtCreated", FALSE)
             ->select('ml.asesor')
@@ -423,7 +425,9 @@ class Prorep extends REST_Controller {
             }
         }
 
+
         if( $q = $this->db->get() ){
+
             okResponse( 'Información Obtenida', 'data', $q->result_array(), $this, 'query', $params );
         }else{
             errResponse('Error al compilar tabla base', REST_Controller::HTTP_BAD_REQUEST, $this, 'error', $this->db->error());
